@@ -1,5 +1,5 @@
 const MONTHS = {
-  januar: 1, februar: 2, mart: 3, april: 4, maj: 5, juni: 6, jul: 7, august: 8,
+  januar: 1, februar: 2, mart: 3, april: 4, maj: 5, juni: 6, juli: 7, august: 8,
   septembar: 9, oktobar: 10, novembar: 11, decembar: 12
 };
 

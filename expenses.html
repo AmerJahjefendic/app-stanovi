@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="bs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AppStanovi – Troškovi</title>
+  <link rel="stylesheet" href="css/app.css" />
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">🏠</div>
+      <div>
+        <div class="title">AppStanovi</div>
+        <div class="subtitle">Troškovi (detaljno)</div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <a class="btn secondary" href="index.html">← Nazad</a>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="panel">
+      <h3>Filter</h3>
+
+      <div class="field">
+        <label>Apartman</label>
+        <select id="expApt">
+          <option value="ALL">Svi</option>
+          <option value="A">A</option>
+          <option value="Z">Z</option>
+          <option value="N">N</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Kategorija</label>
+        <select id="expCat"></select>
+      </div>
+    </aside>
+
+    <section class="content">
+      <div id="expStatus" class="status">Učitavam…</div>
+
+      <div class="grid2">
+        <div class="box">
+          <div class="boxTitle">Troškovi po kategoriji</div>
+          <div id="expByCat"></div>
+        </div>
+
+        <div class="box">
+          <div class="boxTitle">Lista troškova (stavke)</div>
+          <div id="expList"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="js/expenses.js"></script>
+</body>
+</html>

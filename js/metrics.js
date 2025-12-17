@@ -93,8 +93,8 @@ export function computePeriodReport(
         aptFilter === "A"
           ? round2(sharedA)
           : aptFilter === "Z"
-          ? round2(sharedZ)
-          : 0,
+            ? round2(sharedZ)
+            : 0,
       nCommission: round2(nComm),
     };
   } else {
@@ -189,8 +189,8 @@ export function computeYearReport(rowsByMonth, opts) {
       sharedAlloc: opts.aptFilter === "A"
         ? round2(sumPerApt.A.expenses)
         : opts.aptFilter === "Z"
-        ? round2(sumPerApt.Z.expenses)
-        : 0,
+          ? round2(sumPerApt.Z.expenses)
+          : 0,
       nCommission: round2(sumPerApt.N.income), // godišnji N income = commission
     };
   } else {
@@ -233,3 +233,7 @@ export function computeYearReport(rowsByMonth, opts) {
     sharedTotal: round2(sharedTotalYear),
   };
 }
+export function computeRangeReport(rowsByMonth, opts) {
+  return computeYearReport(rowsByMonth, opts);
+}
+

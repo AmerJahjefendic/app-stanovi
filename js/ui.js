@@ -1,6 +1,6 @@
 function fmtEUR(x) {
   if (x === null || x === undefined) return "—";
-  return new Intl.NumberFormat("bs-BA", { style:"currency", currency:"EUR" }).format(x);
+  return new Intl.NumberFormat("bs-BA", { style: "currency", currency: "EUR" }).format(x);
 }
 function fmtNum(x) {
   if (x === null || x === undefined) return "—";
@@ -15,7 +15,7 @@ export function renderPeriodList(root, periods, selectedKey) {
   }
 
   for (const p of periods) {
-    const key = `${p.year}-${String(p.month).padStart(2,"0")}`;
+    const key = `${p.year}-${String(p.month).padStart(2, "0")}`;
     const div = document.createElement("div");
     div.className = "listItem" + (key === selectedKey ? " active" : "");
     div.dataset.key = key;
@@ -38,7 +38,7 @@ export function renderKPIs({ income, expenses, net, nights }, els) {
 }
 
 export function renderIncomeTable(root, perApt, aptFilter) {
-  const rows = (aptFilter === "ALL") ? ["A","Z","N"] : [aptFilter];
+  const rows = (aptFilter === "ALL") ? ["A", "Z", "N"] : [aptFilter];
   let html = `<table><thead><tr><th>Apartman</th><th class="right">Prihod (EUR)</th><th class="right">Noćenja</th></tr></thead><tbody>`;
   for (const a of rows) {
     html += `<tr><td><b>${a}</b></td><td class="right">${fmtEUR(perApt[a].income)}</td><td class="right">${fmtNum(perApt[a].nights)}</td></tr>`;
@@ -110,3 +110,40 @@ export function renderNNote(root, nCommission) {
     <b>Tvoja provizija (EUR):</b> ${nCommission.commission_eur.toFixed(2)} EUR
   `;
 }
+
+const MONTHS_BS = [
+  "Januar","Februar","Mart","April","Maj","Juni",
+  "Juli","August","Septembar","Oktobar","Novembar","Decembar"
+];
+
+export function renderYearCalendar(root, { year, importedMonthsSet, selectedKey }) {
+  if (!root) return;
+
+  const selected = selectedKey?.startsWith(`${year}-`) ? Number(selectedKey.split("-")[1]) : null;
+
+  root.innerHTML = `
+    <div class="yearCalHeader">
+      <div class="yearTitle">${year}</div>
+      <div class="yearCalNav">
+        <button class="btnMini" data-cal="prev">←</button>
+        <button class="btnMini" data-cal="next">→</button>
+      </div>
+    </div>
+    <div class="yearCalGrid">
+      ${MONTHS_BS.map((mName, idx) => {
+        const m = idx + 1;
+        const key = String(m).padStart(2,"0");
+        const imported = importedMonthsSet.has(m);
+        const cls = [
+          "monthCell",
+          imported ? "is-imported" : "is-missing",
+          (selected === m) ? "is-selected" : "",
+          imported ? "" : "is-disabled"
+        ].filter(Boolean).join(" ");
+
+        return `<div class="${cls}" data-month="${m}">${mName}</div>`;
+      }).join("")}
+    </div>
+  `;
+}
+

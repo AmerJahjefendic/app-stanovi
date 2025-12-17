@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="bs">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -10,6 +11,7 @@
   <!-- SheetJS (XLSX parser) -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
+
 <body>
   <header class="topbar">
     <div class="brand">
@@ -21,6 +23,12 @@
     </div>
 
     <div class="actions">
+      <a class="btn secondary" href="expenses.html">Troškovi</a>
+      <button id="btnBackup" class="btn secondary">Backup</button>
+      <label class="btn secondary">
+        Restore
+        <input id="backupInput" type="file" accept=".json" hidden />
+      </label>
       <label class="btn">
         Import XLSX
         <input id="fileInput" type="file" accept=".xlsx" hidden />
@@ -28,7 +36,7 @@
       <button id="btnPrint" class="btn secondary">PDF / Print</button>
     </div>
   </header>
-
+  <!--//FILTER SIDE BAR//-->
   <main class="layout">
     <aside class="panel">
       <h3>Periodi (importovani)</h3>
@@ -47,18 +55,31 @@
         </select>
       </div>
 
-<div class="field">
-  <label>Prikaz</label>
-  <select id="viewMode">
-    <option value="MONTH">Mjesečni</option>
-    <option value="YEAR">Godišnji</option>
-  </select>
-</div>
+      <div class="field">
+        <label>Prikaz</label>
+        <select id="viewMode">
+          <option value="MONTH">Mjesečni</option>
+          <option value="YEAR">Godišnji</option>
+          <option value="RANGE">Period (od–do)</option>
+        </select>
+      </div>
 
-<div class="field">
-  <label>Godina</label>
-  <select id="yearSelect"></select>
-</div>
+      <div class="field filter-collapsible" id="yearBlock">
+        <label>Godina</label>
+        <select id="yearSelect"></select>
+      </div>
+
+      <div id="rangeBlock" class="filter-collapsible">
+        <div class="field">
+          <label>Od perioda</label>
+          <select id="fromPeriod"></select>
+        </div>
+
+        <div class="field">
+          <label>Do perioda</label>
+          <select id="toPeriod"></select>
+        </div>
+      </div>
 
 
       <div class="field">
@@ -69,6 +90,10 @@
           <option value="HALF">50/50</option>
         </select>
       </div>
+
+
+
+
 
       <div class="note">
         Prilivi su u <b>EUR</b>. Troškovi su u <b>BAM</b> i konvertuju se u <b>EUR</b>.
@@ -118,4 +143,5 @@
 
   <script type="module" src="js/app.js"></script>
 </body>
+
 </html>
