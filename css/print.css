@@ -1,0 +1,6 @@
+body { background: white !important; color: black !important; }
+.topbar, .panel { display:none !important; }
+.content { padding: 0 !important; }
+.card, .box { border: 1px solid #ddd !important; background: white !important; }
+.status { border: 1px solid #ddd !important; background: #f7f7f7 !important; }
+th { color: #333 !important; }

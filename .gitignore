@@ -1,0 +1,16 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+
+# Node / temp
+node_modules/
+
+# App data / backups
+*.json
+*.backup.json
+
+# Live Server
+.live-server.json
