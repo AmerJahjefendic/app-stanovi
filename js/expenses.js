@@ -3,6 +3,7 @@ import { dbGetAll, dbPutCategoryAlias } from "./db.js";
 import { renderYearCalendar } from "./ui.js";
 import { periodLabel } from "./parseFilename.js";
 import { loadCategoryAliases, mapExpenseCategory } from "./mappingConfig.js";
+import { renderYearBreakdownTable } from "./expensesUi.js";
 import {
     renderExpensesByCategory,
     renderExpensesList,
@@ -18,6 +19,12 @@ const els = {
     byCat: document.getElementById("expByCat"),
     list: document.getElementById("expList"),
 
+    yearBreakdown: document.getElementById("yearBreakdown"),
+    yearBreakdownTable: document.getElementById("yearBreakdownTable"),
+
+    listWrap: document.getElementById("expListWrap"),
+    listToggle: document.getElementById("expListToggle"),
+
     mergeFrom: document.getElementById("mergeFrom"),
     mergeTo: document.getElementById("mergeTo"),
     mergeSave: document.getElementById("mergeSave"),
@@ -25,7 +32,13 @@ const els = {
 };
 console.log("ELS:", Object.fromEntries(Object.entries(els).map(([k, v]) => [k, !!v])));
 
-const state = { apt: "ALL", cat: "ALL", selectedCalendarYear: null, selectedPeriodKey: null, };
+const state = {
+    apt: "ALL",
+    cat: "ALL",
+    selectedCalendarYear: null,
+    selectedPeriodKey: null,
+    isYearView: false,
+};
 
 // ---------- helpers ----------
 function keyFromPeriod(year, month) {
@@ -56,6 +69,19 @@ function getShareRule() {
 
     if (direct === "INCOME" || direct === "NIGHTS") return direct;
     return "NIGHTS";
+}
+
+function buildYearSeries(expenses, year, category, apt) {
+    const out = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, eur: 0 }));
+
+    for (const e of expenses) {
+        if (e.year !== year) continue;
+        if (apt !== "ALL" && e.apartment !== apt) continue;
+        if (category !== "ALL" && e.category !== category) continue;
+
+        out[e.month - 1].eur += Number(e.amount_eur || 0);
+    }
+    return out;
 }
 
 function buildIncomeMap(incomeMonthlyRows) {
@@ -124,12 +150,20 @@ async function load() {
 
 function applyFilters(expenses) {
     return expenses.filter((e) => {
+        // PERIOD FILTER
         if (state.selectedPeriodKey) {
+            // MONTH view
             const { year, month } = periodKeyToYM(state.selectedPeriodKey);
             if (e.year !== year || e.month !== month) return false;
+        } else if (state.selectedCalendarYear) {
+            // YEAR view
+            if (e.year !== state.selectedCalendarYear) return false;
         }
+
+        // APT / CAT
         if (state.apt !== "ALL" && e.apartment !== state.apt) return false;
         if (state.cat !== "ALL" && normCat(e) !== state.cat) return false;
+
         return true;
     });
 }
@@ -149,7 +183,7 @@ async function render() {
     }
 
     // default odabrani mjesec (zadnji importovani)
-    if (!state.selectedPeriodKey && imports.length) {
+    if (!state.selectedPeriodKey && !state.isYearView && imports.length) {
         const last = imports[imports.length - 1];
         state.selectedPeriodKey = keyFromPeriod(last.year, last.month);
     }
@@ -165,7 +199,8 @@ async function render() {
     renderYearCalendar(els.calendar, {
         year: state.selectedCalendarYear,
         importedMonthsSet: monthsSet,
-        selectedKey: state.selectedPeriodKey
+        selectedKey: state.selectedPeriodKey,
+        isYearView: state.isYearView,
     });
 
     // ===== MERGE UI =====
@@ -189,11 +224,39 @@ async function render() {
 
     const filtered = applyFilters(all);
 
-    if (state.selectedPeriodKey) {
+    // YEAR breakdown tabela: samo u Year view i samo kad je izabrana kategorija
+    const showYearTable = state.isYearView && state.cat !== "ALL";
+    els.yearBreakdown.style.display = showYearTable ? "" : "none";
+
+    if (showYearTable) {
+        const year = state.selectedCalendarYear;
+        const rows = buildYearSeries(all, year, state.cat, state.apt);
+        renderYearBreakdownTable(els.yearBreakdownTable, rows);
+    }
+
+    // da li smo u MONTH ili YEAR view-u
+    const isMonthView = !!state.selectedPeriodKey;
+
+    if (isMonthView) {
         const { year, month } = periodKeyToYM(state.selectedPeriodKey);
-        els.status.textContent = `Period: ${periodLabel({ year, month })} — Stavki: ${filtered.length}`;
+        els.status.textContent =
+            `Period: ${periodLabel({ year, month })} — Stavki: ${filtered.length}`;
     } else {
-        els.status.textContent = `Stavki: ${filtered.length}`;
+        const y = state.selectedCalendarYear || new Date().getFullYear();
+        els.status.textContent =
+            `Godina: ${y} (svi mjeseci) — Stavki: ${filtered.length}`;
+    }
+
+    // YEAR view → sakrij listu po defaultu
+    if (!isMonthView && els.listWrap && els.listToggle) {
+        els.listWrap.classList.add("is-hidden");
+        els.listToggle.textContent = "Prikaži";
+    }
+
+    // MONTH view → pokaži listu
+    if (isMonthView && els.listWrap && els.listToggle) {
+        els.listWrap.classList.remove("is-hidden");
+        els.listToggle.textContent = "Sakrij";
     }
 
     renderExpensesByCategory(els.byCat, filtered);
@@ -201,6 +264,12 @@ async function render() {
 }
 
 function attach() {
+    els.listToggle?.addEventListener("click", async () => {
+        state.listCollapsed = !state.listCollapsed;
+        els.listWrap?.classList.toggle("is-hidden", state.listCollapsed);
+        els.listToggle.textContent = state.listCollapsed ? "Prikaži" : "Sakrij";
+    });
+
     els.expApt?.addEventListener("change", async () => {
         state.apt = els.expApt.value;
         await render();
@@ -232,6 +301,13 @@ function attach() {
     });
 
     els.calendar?.addEventListener("click", async (e) => {
+        const yearClick = e.target.closest("[data-cal='year']");
+        if (yearClick) {
+            state.isYearView = true;
+            state.selectedPeriodKey = null; // YEAR view (cijela godina)
+            await render();
+            return;
+        }
         const prev = e.target.closest("[data-cal='prev']");
         const next = e.target.closest("[data-cal='next']");
 
@@ -260,9 +336,24 @@ function attach() {
         if (cell.classList.contains("is-disabled")) return;
 
         const m = Number(cell.dataset.month);
+        state.isYearView = false;
         state.selectedPeriodKey = keyFromPeriod(state.selectedCalendarYear, m);
         await render();
     });
+
+      // Klik na kategoriju u tabeli -> set filter kategorije
+  els.byCat?.addEventListener("click", async (e) => {
+    const tr = e.target.closest("tr[data-cat]");
+    if (!tr) return;
+
+    const cat = tr.dataset.cat;
+    if (!cat) return;
+
+    state.cat = cat;
+    if (els.expCat) els.expCat.value = cat;
+
+    await render();
+  });
 
 }
 

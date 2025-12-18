@@ -112,18 +112,23 @@ export function renderNNote(root, nCommission) {
 }
 
 const MONTHS_BS = [
-  "Januar","Februar","Mart","April","Maj","Juni",
-  "Juli","August","Septembar","Oktobar","Novembar","Decembar"
+  "Januar", "Februar", "Mart", "April", "Maj", "Juni",
+  "Juli", "August", "Septembar", "Oktobar", "Novembar", "Decembar"
 ];
 
-export function renderYearCalendar(root, { year, importedMonthsSet, selectedKey }) {
+export function renderYearCalendar(
+  root,
+  { year, importedMonthsSet, selectedKey, isYearView = false }
+) {
   if (!root) return;
 
-  const selected = selectedKey?.startsWith(`${year}-`) ? Number(selectedKey.split("-")[1]) : null;
+  const selected = selectedKey?.startsWith(`${year}-`)
+    ? Number(selectedKey.split("-")[1])
+    : null;
 
   root.innerHTML = `
     <div class="yearCalHeader">
-      <div class="yearTitle">${year}</div>
+      <button class="btnMini yearBtn" data-cal="year" type="button" title="Prikaži godinu">${year}</button>
       <div class="yearCalNav">
         <button class="btnMini" data-cal="prev">←</button>
         <button class="btnMini" data-cal="next">→</button>
@@ -132,12 +137,11 @@ export function renderYearCalendar(root, { year, importedMonthsSet, selectedKey 
     <div class="yearCalGrid">
       ${MONTHS_BS.map((mName, idx) => {
         const m = idx + 1;
-        const key = String(m).padStart(2,"0");
         const imported = importedMonthsSet.has(m);
         const cls = [
           "monthCell",
           imported ? "is-imported" : "is-missing",
-          (selected === m) ? "is-selected" : "",
+          selected === m ? "is-selected" : "",
           imported ? "" : "is-disabled"
         ].filter(Boolean).join(" ");
 
@@ -145,5 +149,10 @@ export function renderYearCalendar(root, { year, importedMonthsSet, selectedKey 
       }).join("")}
     </div>
   `;
+  const yearEl = root.querySelector("[data-cal='year']");
+  if (yearEl) {
+    yearEl.classList.toggle("is-active", isYearView);
+  }
 }
+
 

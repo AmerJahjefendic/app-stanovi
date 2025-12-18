@@ -332,3 +332,100 @@ td.right {
 .monthCell.is-missing { background: rgba(220, 60, 60, .10); border: 1px solid rgba(220, 60, 60, .25); opacity: .85; }
 .monthCell.is-disabled{ cursor: not-allowed; opacity: .55; }
 .monthCell.is-selected{ outline: 2px solid rgba(255,255,255,.35); }
+
+.is-hidden { display: none !important; }
+
+/* ===== Calendar year as button ===== */
+.calYear {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+/* hover – jasno da se može kliknuti */
+.calYear:hover {
+  background: #f0f2f5;
+  border-color: #ccc;
+}
+
+/* aktivna godina (YEAR VIEW) */
+.calYear.is-active {
+  background: #2563eb;       /* plava */
+  color: #fff;
+  border-color: #2563eb;
+}
+
+/* mali "button feel" */
+.calYear:active {
+  transform: translateY(1px);
+}
+
+.calYear::after {
+  content: "▾";
+  margin-left: 6px;
+  font-size: 0.8em;
+  opacity: 0.6;
+}
+.yearBtn{
+  font-weight: 700;
+  letter-spacing: .3px;
+  min-width: 74px; /* da izgleda kao pravo dugme */
+}
+
+.yearBtn.is-active{
+  outline: 2px solid rgba(255,255,255,.35);
+  outline-offset: 2px;
+}
+
+/* ===== Year breakdown (mjeseci po kategoriji) ===== */
+
+.yearBreakdownWrap {
+  overflow-x: auto;
+  margin-top: 6px;
+}
+
+.yearBreakdown {
+  min-width: 900px;
+  border-collapse: collapse;
+}
+
+.yearBreakdown th,
+.yearBreakdown td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  white-space: nowrap;
+}
+
+.yearBreakdown th {
+  font-weight: 600;
+  font-size: 13px;
+  color: #cfe0ff;
+}
+
+.yearBreakdown td {
+  font-size: 13px;
+}
+
+.yearBreakdown .center {
+  text-align: center;
+}
+
+.yearBreakdown .right {
+  text-align: right;
+}
+
+.yearBreakdown .totalCol {
+  border-left: 2px solid rgba(255,255,255,0.15);
+  padding-left: 14px;
+}
+
+.catRow { cursor: pointer; }
+.catRow:hover { background: rgba(255,255,255,0.04); }
+.catRow:active { background: rgba(255,255,255,0.06); }
+
+
+
