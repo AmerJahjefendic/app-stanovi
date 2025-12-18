@@ -104,33 +104,47 @@ function parseTabelaPriliva(ws, period) {
 }
 
 function parseTabelaTroskovaShared(ws, period) {
-  // A1-L1 categories, A2-L16 amounts (BAM), M description for column L
   const expenses = [];
 
+  const ref = ws["!ref"];
+  if (!ref) return expenses;
+
+  const range = XLSX.utils.decode_range(ref);
+  const lastCol = range.e.c;         // zadnja kolona u sheetu
+  const startRow = 1;                // row 2 (0-indexed)
+  const endRow = Math.min(range.e.r, 15); // do reda 16 (kao do sada)
+
+  // učitaj headere iz prvog reda (row 1 => r:0)
   const headers = [];
-  for (let c = 0; c <= 11; c++) {
+  for (let c = 0; c <= lastCol; c++) {
     const addr = XLSX.utils.encode_cell({ r: 0, c });
     const h = getCell(ws, addr);
     headers[c] = h ? String(h).trim() : "";
   }
 
-  for (let r = 1; r <= 15; r++) {
-    for (let c = 0; c <= 11; c++) {
+  // pronađi kolonu "Razno" (gdje god da je)
+  const raznoCol = headers.findIndex(h => normSheetName(h) === "razno");
+  const raznoDescCol = (raznoCol >= 0 && raznoCol + 1 <= lastCol) ? (raznoCol + 1) : -1;
+
+  for (let r = startRow; r <= endRow; r++) {
+    for (let c = 0; c <= lastCol; c++) {
+
+      // preskoči "opis" kolonu koja ide odmah poslije Razno (da se ne tretira kao iznos)
+      if (c === raznoDescCol) continue;
+
       const addr = XLSX.utils.encode_cell({ r, c });
-      const v0 = getCell(ws, addr);
-      const v = toNumber(v0);
+      const v = getCell(ws, addr);
+      if (!Number.isFinite(v) || v === 0) continue;
 
-      if (typeof v === "number" && v !== 0) {
-        const rawCategory = headers[c] || "";
+      // --- specijalno za Razno: kategorija = opis iz sljedeće kolone ---
+      if (c === raznoCol && raznoDescCol !== -1) {
+        const descAddr = XLSX.utils.encode_cell({ r, c: raznoDescCol });
+        const desc = getCell(ws, descAddr);
+        const rawDesc = desc !== null ? String(desc).trim() : "";
+
+        // ako nema opisa, onda neka ostane "Razno"
+        const rawCategory = rawDesc || "Razno";
         const category = mapExpenseCategory(rawCategory);
-
-        let note = "";
-        if (c === 11) {
-          // L -> opis u M
-          const descAddr = XLSX.utils.encode_cell({ r, c: 12 });
-          const desc = getCell(ws, descAddr);
-          if (desc !== null && String(desc).trim() !== "") note = String(desc).trim();
-        }
 
         expenses.push({
           id: makeId("exp"),
@@ -142,10 +156,34 @@ function parseTabelaTroskovaShared(ws, period) {
           raw_category: rawCategory,
           amount_bam: v,
           amount_eur: toEUR(v),
-          note,
-          source: "Tabela troskova",
+          note: rawDesc,              // čuvamo originalni opis
+          source: "Tabela troskova (Razno)",
         });
+        continue;
       }
+
+      // --- standardne kolone ---
+      const rawCategory = headers[c] || "";
+      const category = mapExpenseCategory(rawCategory);
+
+      // stara logika za opis u M za kolonu L (ako je to još negdje u fajlovima)
+      let note = "";
+      // (opcionalno zadržiš ovu granu ako ti treba)
+      // if (c === 11) { ... }
+
+      expenses.push({
+        id: makeId("exp"),
+        year: period.year,
+        month: period.month,
+        scope: "SHARED",
+        apartment: null,
+        category,
+        raw_category: rawCategory,
+        amount_bam: v,
+        amount_eur: toEUR(v),
+        note,
+        source: "Tabela troskova",
+      });
     }
   }
 
@@ -163,11 +201,6 @@ function parseAptN(ws, period) {
     const header = getCell(ws, `${col}1`);
     categoryByCol[col] = header ? String(header).trim() : "";
   }
-
-  const headerJ = getCell(ws, "J1");
-  const headerK = getCell(ws, "K1");
-  const jkRaw =
-    [headerJ, headerK].filter(Boolean).map((v) => String(v).trim()).join(" / ") || "Ostalo";
 
   for (let r = 2; r <= 20; r++) {
     // D..I pojedinačne kolone
@@ -193,25 +226,32 @@ function parseAptN(ws, period) {
       }
     }
 
-    // J/K kombinacija po redu
-    const j = toNumber(getCell(ws, `J${r}`));
-    const k = getCell(ws, `K${r}`);
+    // J/K kombinacija po redu (Razno + Opis)
+    const j = toNumber(getCell(ws, `J${r}`)); // iznos
+    const k = getCell(ws, `K${r}`);          // opis
+
     const hasJ = typeof j === "number" && j !== 0;
-    const hasK = k !== null && String(k).trim() !== "";
+    const descText =
+      k !== null && String(k).trim() !== "" ? String(k).trim() : "";
+    const hasK = !!descText;
 
     if (hasJ || hasK) {
+      // Ako postoji opis, koristi opis kao kategoriju
+      const rawCategory = descText || "Razno";
+      const category = mapExpenseCategory(rawCategory);
+
       expenses.push({
         id: makeId("exp"),
         year: period.year,
         month: period.month,
         scope: "APARTMENT",
         apartment: apt,
-        category: mapExpenseCategory(jkRaw),
-        raw_category: jkRaw,
+        category,
+        raw_category: rawCategory,
         amount_bam: hasJ ? j : 0,
         amount_eur: hasJ ? toEUR(j) : 0,
-        note: hasK ? String(k).trim() : "",
-        source: "Apt N (J/K)",
+        note: descText ? "Razno" : "",
+        source: "Apt N (Razno/Opis)",
       });
     }
   }
@@ -289,7 +329,7 @@ export function importTroskovnikXlsx(file, arrayBuffer) {
   if (!wsAptN) {
     const ok = confirm(
       `U ovom fajlu nema taba "Apt N".\n` +
-        `Import će se uraditi bez troškova i detalja za N.\n\nNastaviti?`
+      `Import će se uraditi bez troškova i detalja za N.\n\nNastaviti?`
     );
     if (!ok) throw new Error("Import prekinut.");
   } else {

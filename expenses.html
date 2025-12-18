@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="bs">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,6 +8,7 @@
   <link rel="stylesheet" href="css/app.css" />
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
+
 <body>
   <header class="topbar">
     <div class="brand">
@@ -44,6 +46,21 @@
 
     <section class="content">
       <div id="expStatus" class="status">Učitavam…</div>
+      
+      <div class="card" style="margin-bottom:12px;">
+        <div class="row" style="gap:10px; align-items:center;">
+          <div style="flex:1;">
+            <label>Merge FROM</label>
+            <select id="mergeFrom"></select>
+          </div>
+          <div style="flex:1;">
+            <label>Merge TO</label>
+            <select id="mergeTo"></select>
+          </div>
+          <button id="mergeSave" class="btn">Sačuvaj merge</button>
+        </div>
+        <small id="mergeMsg"></small>
+      </div>
 
       <div class="grid2">
         <div class="box">
@@ -61,4 +78,5 @@
 
   <script type="module" src="js/expenses.js"></script>
 </body>
+
 </html>
