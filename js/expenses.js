@@ -1,5 +1,7 @@
 // js/expenses.js
 import { dbGetAll, dbPutCategoryAlias } from "./db.js";
+import { renderYearCalendar } from "./ui.js";
+import { periodLabel } from "./parseFilename.js";
 import { loadCategoryAliases, mapExpenseCategory } from "./mappingConfig.js";
 import {
     renderExpensesByCategory,
@@ -8,6 +10,8 @@ import {
 } from "./expensesUi.js";
 
 const els = {
+    calendar: document.getElementById("expCalendar"),
+
     status: document.getElementById("expStatus"),
     expApt: document.getElementById("expApt"),
     expCat: document.getElementById("expCat"),
@@ -21,9 +25,18 @@ const els = {
 };
 console.log("ELS:", Object.fromEntries(Object.entries(els).map(([k, v]) => [k, !!v])));
 
-const state = { apt: "ALL", cat: "ALL" };
+const state = { apt: "ALL", cat: "ALL", selectedCalendarYear: null, selectedPeriodKey: null, };
 
 // ---------- helpers ----------
+function keyFromPeriod(year, month) {
+    return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+function periodKeyToYM(key) {
+    const [y, m] = key.split("-").map(Number);
+    return { year: y, month: m };
+}
+
 function normCat(exp) {
     const raw =
         (exp.category && String(exp.category).trim()) ? String(exp.category).trim()
@@ -111,6 +124,10 @@ async function load() {
 
 function applyFilters(expenses) {
     return expenses.filter((e) => {
+        if (state.selectedPeriodKey) {
+            const { year, month } = periodKeyToYM(state.selectedPeriodKey);
+            if (e.year !== year || e.month !== month) return false;
+        }
         if (state.apt !== "ALL" && e.apartment !== state.apt) return false;
         if (state.cat !== "ALL" && normCat(e) !== state.cat) return false;
         return true;
@@ -119,21 +136,52 @@ function applyFilters(expenses) {
 
 async function render() {
     const all = await load();
-    if (els.mergeFrom && els.mergeTo) {
-  const catsAll = Array.from(new Set(all.map(e => normCat(e)))).sort();
-  renderExpenseFilters(els.mergeFrom, catsAll, els.mergeFrom.value || "ALL");
-  renderExpenseFilters(els.mergeTo, catsAll, els.mergeTo.value || "ALL");
-}
-    // ---- MERGE UI dropdowns ----
-    const catsAll = Array.from(new Set(all.map((e) => normCat(e)))).sort();
-    renderExpenseFilters(els.mergeFrom, catsAll, els.mergeFrom.value || "ALL");
-    renderExpenseFilters(els.mergeTo, catsAll, els.mergeTo.value || "ALL");
 
-    // ---- filter kategorija po apartmanu ----
-    const forCats = all.filter((e) => (state.apt === "ALL" ? true : e.apartment === state.apt));
-    renderExpenseFilters(els.expCat, forCats.map((e) => normCat(e)), state.cat);
+    // ===== Calendar init + render =====
+    const imports = await dbGetAll("imports");
+    imports.sort((a, b) => a.year - b.year || a.month - b.month);
 
-    const catSet = new Set(forCats.map((e) => normCat(e)));
+    // default godina kalendara
+    if (!state.selectedCalendarYear) {
+        state.selectedCalendarYear = imports.length
+            ? imports[imports.length - 1].year
+            : new Date().getFullYear();
+    }
+
+    // default odabrani mjesec (zadnji importovani)
+    if (!state.selectedPeriodKey && imports.length) {
+        const last = imports[imports.length - 1];
+        state.selectedPeriodKey = keyFromPeriod(last.year, last.month);
+    }
+
+    // set mjeseci koji postoje za tu godinu (zelena/crvena)
+    const monthsSet = new Set(
+        imports
+            .filter(i => i.year === state.selectedCalendarYear)
+            .map(i => i.month)
+    );
+
+    // nacrtaj kalendar
+    renderYearCalendar(els.calendar, {
+        year: state.selectedCalendarYear,
+        importedMonthsSet: monthsSet,
+        selectedKey: state.selectedPeriodKey
+    });
+
+    // ===== MERGE UI =====
+    const catsAll = Array.from(new Set(all.map(e => normCat(e)))).sort();
+
+    const prevFrom = els.mergeFrom.value || "ALL";
+    const prevTo = els.mergeTo.value || "ALL";
+
+    renderExpenseFilters(els.mergeFrom, catsAll, prevFrom);
+    renderExpenseFilters(els.mergeTo, catsAll, prevTo);
+
+    // ===== Filteri (kategorije zavise od apartmana) =====
+    const forCats = all.filter(e => state.apt === "ALL" ? true : e.apartment === state.apt);
+    renderExpenseFilters(els.expCat, forCats.map(e => normCat(e)), state.cat);
+
+    const catSet = new Set(forCats.map(e => normCat(e)));
     if (state.cat !== "ALL" && !catSet.has(state.cat)) {
         state.cat = "ALL";
         els.expCat.value = "ALL";
@@ -141,7 +189,13 @@ async function render() {
 
     const filtered = applyFilters(all);
 
-    els.status.textContent = `Stavki: ${filtered.length}`;
+    if (state.selectedPeriodKey) {
+        const { year, month } = periodKeyToYM(state.selectedPeriodKey);
+        els.status.textContent = `Period: ${periodLabel({ year, month })} — Stavki: ${filtered.length}`;
+    } else {
+        els.status.textContent = `Stavki: ${filtered.length}`;
+    }
+
     renderExpensesByCategory(els.byCat, filtered);
     renderExpensesList(els.list, filtered);
 }
@@ -157,25 +211,59 @@ function attach() {
         await render();
     });
 
-    // MERGE dugme – radi samo ako UI postoji
+    // MERGE: samo jednom!
     els.mergeSave?.addEventListener("click", async () => {
-        const from = els.mergeFrom?.value;
-        const to = els.mergeTo?.value;
+        const from = els.mergeFrom.value;
+        const to = els.mergeTo.value;
 
         if (!from || !to || from === "ALL" || to === "ALL") {
-            els.mergeMsg && (els.mergeMsg.textContent = "Izaberi FROM i TO.");
+            els.mergeMsg.textContent = "Izaberi FROM i TO.";
             return;
         }
         if (from === to) {
-            els.mergeMsg && (els.mergeMsg.textContent = "FROM i TO ne mogu biti isti.");
+            els.mergeMsg.textContent = "FROM i TO ne mogu biti isti.";
             return;
         }
 
         await dbPutCategoryAlias(from, to);
-        await loadCategoryAliases();
-        els.mergeMsg && (els.mergeMsg.textContent = `OK: "${from}" → "${to}"`);
+        await loadCategoryAliases(); // refresh cache u mappingConfig
+        els.mergeMsg.textContent = `OK: "${from}" → "${to}"`;
         await render();
     });
+
+    els.calendar?.addEventListener("click", async (e) => {
+        const prev = e.target.closest("[data-cal='prev']");
+        const next = e.target.closest("[data-cal='next']");
+
+        if (prev || next) {
+            state.selectedCalendarYear += prev ? -1 : 1;
+
+            // kad promijeniš godinu, auto-odaberi zadnji importovani mjesec u toj godini (ako postoji)
+            const imports = await dbGetAll("imports");
+            const inYear = imports
+                .filter(i => i.year === state.selectedCalendarYear)
+                .sort((a, b) => a.month - b.month);
+
+            if (inYear.length) {
+                const last = inYear[inYear.length - 1];
+                state.selectedPeriodKey = keyFromPeriod(last.year, last.month);
+            } else {
+                state.selectedPeriodKey = null; // nema podataka u toj godini
+            }
+
+            await render();
+            return;
+        }
+
+        const cell = e.target.closest(".monthCell");
+        if (!cell) return;
+        if (cell.classList.contains("is-disabled")) return;
+
+        const m = Number(cell.dataset.month);
+        state.selectedPeriodKey = keyFromPeriod(state.selectedCalendarYear, m);
+        await render();
+    });
+
 }
 
 (async () => {
