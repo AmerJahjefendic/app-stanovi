@@ -2,8 +2,6 @@
 import { loadCategoryAliases } from "./mappingConfig.js";
 await loadCategoryAliases();
 import { state } from "./state.js";
-import { mapExpenseCategory } from "./mappingConfig.js";
-await mapExpenseCategory();
 import {
   dbGetAll,
   dbGetByIndex,

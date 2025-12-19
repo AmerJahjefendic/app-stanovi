@@ -101,13 +101,18 @@ export function renderNNote(root, nCommission) {
     root.textContent = "Nema podatka za N proviziju.";
     return;
   }
+  const incomeTotal = Number(nCommission?.incomeN_eur_total);
+  const commission = Number(nCommission?.commission_eur);
+  const incomeStr = Number.isFinite(incomeTotal) ? incomeTotal.toFixed(2) : "—";
+  const commissionStr = Number.isFinite(commission) ? commission.toFixed(2) : "—";
+
   root.innerHTML = `
     Za apartman <b>N</b>, u KPI i izvještajima kao “prihod” se koristi <b>samo tvoja provizija</b>:
     <br/>
     Provizija = <b>25%</b> × (N priliv iz “Tabela priliva”) + <b>10 EUR</b>.
     <br/><br/>
-    <b>Ukupni N priliv (EUR):</b> ${nCommission.incomeN_eur_total.toFixed(2)} EUR<br/>
-    <b>Tvoja provizija (EUR):</b> ${nCommission.commission_eur.toFixed(2)} EUR
+    <b>Ukupni N priliv (EUR):</b> ${incomeStr} EUR<br/>
+    <b>Tvoja provizija (EUR):</b> ${commissionStr} EUR
   `;
 }
 
