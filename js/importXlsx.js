@@ -61,44 +61,60 @@ function sumRange(ws, col, r1, r2) {
 
 // ---------- parsers ----------
 function parseTabelaPriliva(ws, period) {
-  // Rows 2..18
-  const incomeA = sumRange(ws, "A", 2, 18);
-  const nightsA = sumRange(ws, "B", 2, 18);
-  const incomeZ = sumRange(ws, "C", 2, 18);
-  const nightsZ = sumRange(ws, "D", 2, 18);
+  const items = [];
 
-  let incomeN = 0;
-  let nightsN = 0;
-  let incomeNRows = 0;
+  function pushItem(apartment, amountCell, nightsCell, r) {
+    const amount = toNumber(getCell(ws, `${amountCell}${r}`));
+    const nights = toNumber(getCell(ws, `${nightsCell}${r}`));
 
-  for (let r = 2; r <= 18; r++) {
-    const v = toNumber(getCell(ws, `E${r}`));
-    const n = toNumber(getCell(ws, `F${r}`));
+    const hasAmount = typeof amount === "number" && amount !== 0;
+    const hasNights = typeof nights === "number" && nights !== 0;
+    if (!hasAmount && !hasNights) return;
 
-    if (typeof v === "number" && v > 0) {
-      incomeN += v;
-      incomeNRows++; // broj redova sa prilivom
-    }
-    if (typeof n === "number") nightsN += n;
+    items.push({
+      id: makeId("incit"),
+      year: period.year,
+      month: period.month,
+      apartment,
+      amount_eur: hasAmount ? amount : 0,
+      nights: hasNights ? nights : 0,
+      note: `Red ${r}`,
+      source: "Tabela priliva",
+    });
   }
 
-  const rows = [
-    { apartment: "A", income_eur: incomeA, nights: nightsA },
-    { apartment: "Z", income_eur: incomeZ, nights: nightsZ },
-    { apartment: "N", income_eur: incomeN, nights: nightsN },
-  ].map((x) => ({
+  // Rows 2..18
+  for (let r = 2; r <= 18; r++) {
+    pushItem("A", "A", "B", r);
+    pushItem("Z", "C", "D", r);
+    pushItem("N", "E", "F", r);
+  }
+
+  // sum from items
+  const sums = { A: { income: 0, nights: 0 }, Z: { income: 0, nights: 0 }, N: { income: 0, nights: 0 } };
+  let incomeNRows = 0;
+
+  for (const it of items) {
+    sums[it.apartment].income += Number(it.amount_eur || 0);
+    sums[it.apartment].nights += Number(it.nights || 0);
+
+    if (it.apartment === "N" && Number(it.amount_eur || 0) > 0) incomeNRows++;
+  }
+
+  const incomeMonthly = ["A", "Z", "N"].map(apartment => ({
     id: makeId("inc"),
     year: period.year,
     month: period.month,
-    apartment: x.apartment,
-    income_eur: x.income_eur,
-    nights: x.nights,
+    apartment,
+    income_eur: sums[apartment].income,
+    nights: sums[apartment].nights,
     source: "Tabela priliva",
   }));
 
   return {
-    incomeMonthly: rows,
-    incomeNTotal: incomeN,
+    incomeMonthly,
+    incomeItems: items,
+    incomeNTotal: sums.N.income,
     incomeNRows,
   };
 }
@@ -340,7 +356,7 @@ export function importTroskovnikXlsx(file, arrayBuffer) {
   const parsedIncome = parseTabelaPriliva(wsIncome, period);
   const expensesShared = parseTabelaTroskovaShared(wsCosts, period);
 
-  let { incomeMonthly, incomeNTotal, incomeNRows } = parsedIncome;
+  let { incomeMonthly, incomeItems, incomeNTotal, incomeNRows } = parsedIncome;
 
   // Ako postoji Apt N, koristi njegove realne vrijednosti (priliv/noći/provizija)
   let commissionEur = null;
@@ -388,10 +404,11 @@ export function importTroskovnikXlsx(file, arrayBuffer) {
   };
 
   return {
-    period,
-    importRecord,
-    incomeMonthly,
-    expenses: [...expensesShared, ...expensesN],
-    nCommission,
-  };
+  period,
+  importRecord,
+  incomeMonthly,
+  incomeItems,
+  expenses: [...expensesShared, ...expensesN],
+  nCommission,
+};
 }

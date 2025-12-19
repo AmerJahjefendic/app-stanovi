@@ -180,22 +180,19 @@ async function loadPeriodData() {
   const year = Number(yearStr);
   const month = Number(monthStr);
 
-  const incomeMonthly = await dbGetByIndex("income_monthly", "by_period", [
-    year,
-    month,
-  ]);
+  const incomeMonthly = await dbGetByIndex("income_monthly", "by_period", [year, month]);
+  const incomeItems = await dbGetByIndex("income_items", "by_period", [year, month]).catch(() => []);
   const expenses = await dbGetByIndex("expenses", "by_period", [year, month]);
-  const nCommission = await dbGetOneByIndex("n_commission", "by_period", [
-    year,
-    month,
-  ]);
+  const nCommission = await dbGetOneByIndex("n_commission", "by_period", [year, month]);
 
-  return { year, month, incomeMonthly, expenses, nCommission };
+
+  return { year, month, incomeMonthly, incomeItems,expenses, nCommission };
 }
 
 async function deletePeriod(year, month) {
   await dbDeleteByIndex("imports", "by_period", [year, month]);
   await dbDeleteByIndex("income_monthly", "by_period", [year, month]);
+  await dbDeleteByIndex("income_items", "by_period", [year, month]);
   await dbDeleteByIndex("expenses", "by_period", [year, month]);
   await dbDeleteByIndex("n_commission", "by_period", [year, month]);
 }
@@ -350,6 +347,9 @@ async function handleImport(file) {
 
   await dbPutOne("imports", parsed.importRecord);
   await dbPutMany("income_monthly", parsed.incomeMonthly);
+  if (parsed.incomeItems?.length) {
+  await dbPutMany("income_items", parsed.incomeItems);
+}
   await dbPutMany("expenses", parsed.expenses);
   await dbPutOne("n_commission", parsed.nCommission);
 
@@ -369,6 +369,7 @@ async function exportBackup() {
     meta: { app: "AppStanovi", version: "1.0", exported_at: new Date().toISOString() },
     imports: await dbGetAll("imports"),
     income_monthly: await dbGetAll("income_monthly"),
+    income_items: await dbGetAll("income_items").catch(() => []),
     expenses: await dbGetAll("expenses"),
     n_commission: await dbGetAll("n_commission"),
   };
@@ -438,6 +439,7 @@ async function restoreBackupFile(file) {
   // Upis
   if (data.imports?.length) await dbPutMany("imports", data.imports);
   if (data.income_monthly?.length) await dbPutMany("income_monthly", data.income_monthly);
+  if (data.income_items?.length) await dbPutMany("income_items", data.income_items);
   if (data.expenses?.length) await dbPutMany("expenses", data.expenses);
   if (data.n_commission?.length) await dbPutMany("n_commission", data.n_commission);
 

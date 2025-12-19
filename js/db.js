@@ -1,6 +1,6 @@
 // js/db.js
 const DB_NAME = "appstanovi_db";
-const DB_VER = 3;
+const DB_VER = 5;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -25,6 +25,13 @@ function openDB() {
       // ===== INCOME =====
       if (!db.objectStoreNames.contains("income_monthly")) {
         const s = db.createObjectStore("income_monthly", { keyPath: "id" });
+        s.createIndex("by_period", ["year", "month"]);
+        s.createIndex("by_period_apt", ["year", "month", "apartment"]);
+      }
+
+      // ===== INCOME ITEMS (taksativne stavke prihoda) =====
+      if (!db.objectStoreNames.contains("income_items")) {
+        const s = db.createObjectStore("income_items", { keyPath: "id" });
         s.createIndex("by_period", ["year", "month"]);
         s.createIndex("by_period_apt", ["year", "month", "apartment"]);
       }

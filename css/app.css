@@ -191,6 +191,12 @@ select {
   gap: 12px;
 }
 
+.grid3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
 .box {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -245,6 +251,10 @@ td.right {
   }
 
   .grid2 {
+    grid-template-columns: 1fr;
+  }
+
+  .grid3 {
     grid-template-columns: 1fr;
   }
 }
@@ -427,5 +437,6 @@ td.right {
 .catRow:hover { background: rgba(255,255,255,0.04); }
 .catRow:active { background: rgba(255,255,255,0.06); }
 
+.is-collapsed { display: none; }
 
 

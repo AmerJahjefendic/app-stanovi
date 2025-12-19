@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="bs">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AppStanovi – Prihodi</title>
+    <link rel="stylesheet" href="css/app.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+
+<body>
+    <header class="topbar">
+        <div class="brand">
+            <div class="logo">🏠</div>
+            <div>
+                <div class="title">AppStanovi</div>
+                <div class="subtitle">Prihodi (detaljno)</div>
+            </div>
+        </div>
+
+        <div class="actions">
+            <a class="btn secondary" href="index.html">← Nazad</a>
+        </div>
+    </header>
+
+    <main class="layout">
+        <aside class="panel">
+            <h3>Filter</h3>
+
+            <div id="incCalendar"></div>
+
+            <div class="field">
+                <label>Apartman</label>
+                <select id="incApt">
+                    <option value="ALL">Svi</option>
+                    <option value="A">A</option>
+                    <option value="Z">Z</option>
+                    <option value="N">N</option>
+                </select>
+            </div>
+
+        </aside>
+
+        <section class="content">
+            <div id="incStatus" class="status">Učitavam…</div>
+
+            <div class="grid3">
+                <div class="box">
+                    <div class="boxTitle">Prihodi – sažetak (A/Z/N)</div>
+                    <div id="incSummary"></div>
+                </div>
+
+                <div class="box">
+                    <div class="boxTitle">Prihodi po apartmanu</div>
+                    <div id="incByApt"></div>
+                </div>
+
+                <div class="box">
+                    <div class="boxTitle row" style="justify-content:space-between; align-items:center;">
+                        <span>Taksativno: stavke prihoda</span>
+                        <button class="btn secondary" id="btnToggleIncItems">Prikaži</button>
+                    </div>
+                    <div id="incItemsWrap" class="is-collapsed">
+                        <div id="incItemsTable"></div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+    </main>
+
+    <script type="module" src="js/income.js"></script>
+</body>
+
+</html>
