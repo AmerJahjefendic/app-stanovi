@@ -43,6 +43,26 @@
       <h3>Periodi (importovani)</h3>
       <div id="periodList" class="list"></div>
 
+
+      <div class="divider"></div>
+
+      <h3>Raspon (OD–DO)</h3>
+
+      <div class="field">
+        <label>Od</label>
+        <select id="fromPeriod"></select>
+      </div>
+
+      <div class="field">
+        <label>Do</label>
+        <select id="toPeriod"></select>
+      </div>
+
+      <div class="row" style="gap:8px;">
+        <button id="btnShowRange" class="btn secondary" style="flex:1;">Prikaži raspon</button>
+        <button id="btnClearRange" class="btn secondary" style="flex:1;">Reset</button>
+      </div>
+
       <div class="divider"></div>
 
       <h3>Filter</h3>
@@ -56,31 +76,7 @@
         </select>
       </div>
 
-      <div class="field">
-        <label>Prikaz</label>
-        <select id="viewMode">
-          <option value="MONTH">Mjesečni</option>
-          <option value="YEAR">Godišnji</option>
-          <option value="RANGE">Period (od–do)</option>
-        </select>
-      </div>
 
-      <div class="field filter-collapsible" id="yearBlock">
-        <label>Godina</label>
-        <select id="yearSelect"></select>
-      </div>
-
-      <div id="rangeBlock" class="filter-collapsible">
-        <div class="field">
-          <label>Od perioda</label>
-          <select id="fromPeriod"></select>
-        </div>
-
-        <div class="field">
-          <label>Do perioda</label>
-          <select id="toPeriod"></select>
-        </div>
-      </div>
 
 
       <div class="field">

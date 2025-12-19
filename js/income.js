@@ -1,5 +1,6 @@
 // js/income.js
 import { dbGetAll } from "./db.js";
+import { keyFromPeriod, periodKeyToYM } from "./utils.js";
 import { renderYearCalendar } from "./ui.js";
 import { periodLabel } from "./parseFilename.js";
 import {
@@ -27,14 +28,6 @@ const state = {
 };
 
 // ---------- helpers ----------
-function keyFromPeriod(year, month) {
-    return `${year}-${String(month).padStart(2, "0")}`;
-}
-
-function periodKeyToYM(key) {
-    const [y, m] = key.split("-").map(Number);
-    return { year: y, month: m };
-}
 
 async function load() {
     const [incomeMonthly, incomeItems, nCommission, imports] = await Promise.all([

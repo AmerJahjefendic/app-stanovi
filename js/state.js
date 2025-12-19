@@ -1,20 +1,13 @@
-
-
 // js/state.js
 export const state = {
-  selectedPeriodKey: null,
-
-  // filteri
   aptFilter: "ALL",
   shareRule: "NIGHTS",
 
-  // prikaz
-  viewMode: "MONTH",
+  selectedCalendarYear: null, // godina u kalendaru
+  selectedPeriodKey: null,    // "YYYY-MM" za MONTH view
+  isYearView: false,          // YEAR view (klik na godinu)
+  isRangeView: false,         // RANGE view (klik na dugme)
 
-  // godina (za YEAR view)
-  selectedYear: null,
-
-  // 👇 NOVO – godina za mini-kalendar
-  selectedCalendarYear: null
+  fromPeriodKey: null,        // "YYYY-MM"
+  toPeriodKey: null,          // "YYYY-MM"
 };
-

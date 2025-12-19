@@ -1,11 +1,5 @@
-function fmtEUR(x) {
-  if (x === null || x === undefined) return "—";
-  return new Intl.NumberFormat("bs-BA", { style: "currency", currency: "EUR" }).format(x);
-}
-function fmtNum(x) {
-  if (x === null || x === undefined) return "—";
-  return new Intl.NumberFormat("bs-BA").format(x);
-}
+// js/ui.js
+import { fmtEUR, fmtNum } from "./utils.js";
 
 export function renderPeriodList(root, periods, selectedKey) {
   root.innerHTML = "";
@@ -31,17 +25,17 @@ export function renderPeriodList(root, periods, selectedKey) {
 }
 
 export function renderKPIs({ income, expenses, net, nights }, els) {
-  els.kpiIncome.textContent = fmtEUR(income);
-  els.kpiExpenses.textContent = fmtEUR(expenses);
-  els.kpiNet.textContent = fmtEUR(net);
-  els.kpiNights.textContent = fmtNum(nights);
+  els.kpiIncome.textContent = fmtEUR(income, { dashIfNull: true });
+  els.kpiExpenses.textContent = fmtEUR(expenses, { dashIfNull: true });
+  els.kpiNet.textContent = fmtEUR(net, { dashIfNull: true });
+  els.kpiNights.textContent = fmtNum(nights, { dashIfNull: true });
 }
 
 export function renderIncomeTable(root, perApt, aptFilter) {
   const rows = (aptFilter === "ALL") ? ["A", "Z", "N"] : [aptFilter];
   let html = `<table><thead><tr><th>Apartman</th><th class="right">Prihod (EUR)</th><th class="right">Noćenja</th></tr></thead><tbody>`;
   for (const a of rows) {
-    html += `<tr><td><b>${a}</b></td><td class="right">${fmtEUR(perApt[a].income)}</td><td class="right">${fmtNum(perApt[a].nights)}</td></tr>`;
+    html += `<tr><td><b>${a}</b></td><td class="right">${fmtEUR(perApt[a].income, { dashIfNull: true })}</td><td class="right">${fmtNum(perApt[a].nights, { dashIfNull: true })}</td></tr>`;
   }
   html += `</tbody></table>`;
   root.innerHTML = html;
@@ -55,8 +49,8 @@ export function renderExpenseTable(root, report, aptFilter) {
       <table>
         <thead><tr><th>Stavka</th><th class="right">EUR</th></tr></thead>
         <tbody>
-          <tr><td>Shared total (A+Z)</td><td class="right">${fmtEUR(sharedTotal)}</td></tr>
-          <tr><td><b>Dodijeljeno A (po pravilu)</b></td><td class="right"><b>${fmtEUR(sharedA)}</b></td></tr>
+          <tr><td>Shared total (A+Z)</td><td class="right">${fmtEUR(sharedTotal, { dashIfNull: true })}</td></tr>
+          <tr><td><b>Dodijeljeno A (po pravilu)</b></td><td class="right"><b>${fmtEUR(sharedA, { dashIfNull: true })}</b></td></tr>
         </tbody>
       </table>`;
     return;
@@ -66,8 +60,8 @@ export function renderExpenseTable(root, report, aptFilter) {
       <table>
         <thead><tr><th>Stavka</th><th class="right">EUR</th></tr></thead>
         <tbody>
-          <tr><td>Shared total (A+Z)</td><td class="right">${fmtEUR(sharedTotal)}</td></tr>
-          <tr><td><b>Dodijeljeno Z (po pravilu)</b></td><td class="right"><b>${fmtEUR(sharedZ)}</b></td></tr>
+          <tr><td>Shared total (A+Z)</td><td class="right">${fmtEUR(sharedTotal, { dashIfNull: true })}</td></tr>
+          <tr><td><b>Dodijeljeno Z (po pravilu)</b></td><td class="right"><b>${fmtEUR(sharedZ, { dashIfNull: true })}</b></td></tr>
         </tbody>
       </table>`;
     return;
@@ -77,7 +71,7 @@ export function renderExpenseTable(root, report, aptFilter) {
       <table>
         <thead><tr><th>Stavka</th><th class="right">EUR</th></tr></thead>
         <tbody>
-          <tr><td><b>Troškovi N (Apt N tab)</b></td><td class="right"><b>${fmtEUR(nTotal)}</b></td></tr>
+          <tr><td><b>Troškovi N (Apt N tab)</b></td><td class="right"><b>${fmtEUR(nTotal, { dashIfNull: true })}</b></td></tr>
         </tbody>
       </table>`;
     return;
@@ -88,10 +82,10 @@ export function renderExpenseTable(root, report, aptFilter) {
     <table>
       <thead><tr><th>Stavka</th><th class="right">EUR</th></tr></thead>
       <tbody>
-        <tr><td>Troškovi A (dodijeljeno)</td><td class="right">${fmtEUR(perApt.A.expenses)}</td></tr>
-        <tr><td>Troškovi Z (dodijeljeno)</td><td class="right">${fmtEUR(perApt.Z.expenses)}</td></tr>
-        <tr><td>Troškovi N</td><td class="right">${fmtEUR(perApt.N.expenses)}</td></tr>
-        <tr><td><b>Ukupno</b></td><td class="right"><b>${fmtEUR(perApt.A.expenses + perApt.Z.expenses + perApt.N.expenses)}</b></td></tr>
+        <tr><td>Troškovi A (dodijeljeno)</td><td class="right">${fmtEUR(perApt.A.expenses, { dashIfNull: true })}</td></tr>
+        <tr><td>Troškovi Z (dodijeljeno)</td><td class="right">${fmtEUR(perApt.Z.expenses, { dashIfNull: true })}</td></tr>
+        <tr><td>Troškovi N</td><td class="right">${fmtEUR(perApt.N.expenses, { dashIfNull: true })}</td></tr>
+        <tr><td><b>Ukupno</b></td><td class="right"><b>${fmtEUR(perApt.A.expenses + perApt.Z.expenses + perApt.N.expenses, { dashIfNull: true })}</b></td></tr>
       </tbody>
     </table>`;
 }

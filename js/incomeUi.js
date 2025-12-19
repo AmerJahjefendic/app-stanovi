@@ -1,16 +1,5 @@
 // js/incomeUi.js
-
-// ---------- FORMAT ----------
-export function fmtEUR(x) {
-  return new Intl.NumberFormat("bs-BA", {
-    style: "currency",
-    currency: "EUR",
-  }).format(Number(x || 0));
-}
-
-export function fmtNum(x) {
-  return new Intl.NumberFormat("bs-BA").format(Number(x || 0));
-}
+import { fmtEUR, fmtNum } from "./utils.js";
 
 // ---------- SUMMARY BOX (A/Z/N breakdown) ----------
 export function renderIncomeSummary(root, { sumsAZN, nBreakdown, total }) {

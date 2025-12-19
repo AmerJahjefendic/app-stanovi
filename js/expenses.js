@@ -1,5 +1,6 @@
 // js/expenses.js
 import { dbGetAll, dbPutCategoryAlias } from "./db.js";
+import { keyFromPeriod, periodKeyToYM } from "./utils.js";
 import { renderYearCalendar } from "./ui.js";
 import { periodLabel } from "./parseFilename.js";
 import { loadCategoryAliases, mapExpenseCategory } from "./mappingConfig.js";
@@ -41,15 +42,6 @@ const state = {
 };
 
 // ---------- helpers ----------
-function keyFromPeriod(year, month) {
-    return `${year}-${String(month).padStart(2, "0")}`;
-}
-
-function periodKeyToYM(key) {
-    const [y, m] = key.split("-").map(Number);
-    return { year: y, month: m };
-}
-
 function normCat(exp) {
     const raw =
         (exp.category && String(exp.category).trim()) ? String(exp.category).trim()
