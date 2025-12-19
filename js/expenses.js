@@ -30,7 +30,7 @@ const els = {
     mergeSave: document.getElementById("mergeSave"),
     mergeMsg: document.getElementById("mergeMsg"),
 };
-console.log("ELS:", Object.fromEntries(Object.entries(els).map(([k, v]) => [k, !!v])));
+// Debug log removed
 
 const state = {
     apt: "ALL",
@@ -341,7 +341,7 @@ function attach() {
         await render();
     });
 
-      // Klik na kategoriju u tabeli -> set filter kategorije
+      // Klik na kategoriju u tabeli -> toggle filter kategorije
   els.byCat?.addEventListener("click", async (e) => {
     const tr = e.target.closest("tr[data-cat]");
     if (!tr) return;
@@ -349,8 +349,15 @@ function attach() {
     const cat = tr.dataset.cat;
     if (!cat) return;
 
-    state.cat = cat;
-    if (els.expCat) els.expCat.value = cat;
+    // Ako je već filtrirano na ovu kategoriju, resetuj na ALL
+    // Inače, filtriraj na ovu kategoriju
+    if (state.cat === cat) {
+      state.cat = "ALL";
+      if (els.expCat) els.expCat.value = "ALL";
+    } else {
+      state.cat = cat;
+      if (els.expCat) els.expCat.value = cat;
+    }
 
     await render();
   });
