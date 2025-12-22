@@ -58,6 +58,14 @@ const els = {
   nNote: document.getElementById("nNote"),
 };
 
+function loadSettings() {
+  const sr = localStorage.getItem("shareRule");
+  if (sr) state.shareRule = sr;
+
+  // sync UI
+  if (els.shareRule) els.shareRule.value = state.shareRule;
+}
+
 // ----------------- helpers -----------------
 function setPickerLabel(btn, key) {
   if (!btn) return;
@@ -518,6 +526,7 @@ function attachEvents() {
 
   els.shareRule?.addEventListener("change", async () => {
     state.shareRule = els.shareRule.value;
+    localStorage.setItem("shareRule", state.shareRule);
     await render();
   });
 
@@ -555,4 +564,5 @@ function attachEvents() {
 }
 
 attachEvents();
+loadSettings();
 render();
