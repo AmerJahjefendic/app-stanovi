@@ -439,4 +439,70 @@ td.right {
 
 .is-collapsed { display: none; }
 
+.pickerBtn{
+  width:100%;
+  text-align:left;
+  padding:10px 12px;
+  border:1px solid rgba(0,0,0,.15);
+  border-radius:10px;
+  background:#fff;
+  cursor:pointer;
+}
+
+.pickerBtn:after{
+  content:"▾";
+  float:right;
+  opacity:.6;
+}
+
+/* ==== Mini calendar popover (range OD/DO) ==== */
+.calPop{
+  position: absolute;              /* ili absolute ako želiš lebdeći */
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 12px;
+  background: rgba(10,22,40,.96);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  z-index: 50;
+}
+.calPop.is-hidden{ display:none; }
+
+/* Header (godina + strelice) — prikaži godinu jasno */
+.calPop .yearCalHeader{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: rgba(255,255,255,.92);
+}
+.calPop .yearBtn{
+  color: rgba(255,255,255,.95);
+  font-weight: 700;
+}
+
+/* Grid unutar popup-a */
+.calPop .yearCalGrid{
+  display:grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 8px;
+}
+
+/* Ključ: natjeraj tekst mjeseca da bude vidljiv */
+.calPop .monthCell{
+  color: rgba(255,255,255,.92) !important;
+  font-size: 12px;     /* može 13px ako želiš veće */
+  line-height: 1.1;
+  padding: 10px 8px;
+}
+
+/* Disabled i selekcija i dalje rade */
+.calPop .monthCell.is-disabled{ opacity:.35; cursor:not-allowed; }
+.calPop .monthCell.is-selected{ outline: 2px solid rgba(255,255,255,.45); }
+
+/* Ove boje ostaju iste, samo ih “scope-amo” u popup (nije obavezno) */
+.calPop .monthCell.is-imported{ background: rgba(0,200,120,.12); border:1px solid rgba(0,200,120,.25); }
+.calPop .monthCell.is-missing { background: rgba(220,60,60,.10);  border:1px solid rgba(220,60,60,.25); }
+
 

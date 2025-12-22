@@ -10,4 +10,6 @@ export const state = {
 
   fromPeriodKey: null,        // "YYYY-MM"
   toPeriodKey: null,          // "YYYY-MM"
+  rangeFromYear: null,
+  rangeToYear: null,
 };

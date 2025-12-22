@@ -1,7 +1,7 @@
 // js/app.js
 import { loadCategoryAliases } from "./mappingConfig.js";
 await loadCategoryAliases();
-import { computePeriodReport, computeYearReport, computeRangeReport } from "./metrics.js";
+
 import { state } from "./state.js";
 import {
   dbGetAll,
@@ -15,28 +15,40 @@ import {
 import { keyFromPeriod, periodKeyToYM } from "./utils.js";
 import { importTroskovnikXlsx } from "./importXlsx.js";
 import { periodLabel } from "./parseFilename.js";
+import { computePeriodReport, computeYearReport, computeRangeReport } from "./metrics.js";
 import { printToPdf } from "./pdf.js";
 import {
   renderKPIs,
   renderIncomeTable,
   renderExpenseTable,
   renderNNote,
-  renderYearCalendar
+  renderYearCalendar,
 } from "./ui.js";
 
 const els = {
-  fromPeriod: document.getElementById("fromPeriod"),
-  toPeriod: document.getElementById("toPeriod"),
+  // range buttons + popovers
+  fromBtn: document.getElementById("fromPeriodBtn"),
+  toBtn: document.getElementById("toPeriodBtn"),
+  fromPop: document.getElementById("fromCalPop"),
+  toPop: document.getElementById("toCalPop"),
   btnShowRange: document.getElementById("btnShowRange"),
   btnClearRange: document.getElementById("btnClearRange"),
+
+  // sidebar calendar
   periodList: document.getElementById("periodList"),
+
+  // topbar actions
   btnBackup: document.getElementById("btnBackup"),
   backupInput: document.getElementById("backupInput"),
   fileInput: document.getElementById("fileInput"),
   btnPrint: document.getElementById("btnPrint"),
+
+  // filters + status
   status: document.getElementById("status"),
   aptFilter: document.getElementById("aptFilter"),
   shareRule: document.getElementById("shareRule"),
+
+  // KPI cards + tables
   kpiIncome: document.getElementById("kpiIncome"),
   kpiExpenses: document.getElementById("kpiExpenses"),
   kpiNet: document.getElementById("kpiNet"),
@@ -46,74 +58,27 @@ const els = {
   nNote: document.getElementById("nNote"),
 };
 
-async function refreshPeriodCalendar() {
-  const imports = await dbGetAll("imports");
-  imports.sort((a, b) => a.year - b.year || a.month - b.month);
-
-  // OD/DO options
-  if (els.fromPeriod && els.toPeriod) {
-    const options = imports.map(i => ({
-      key: keyFromPeriod(i.year, i.month),
-      label: periodLabel({ year: i.year, month: i.month }),
-    }));
-
-    els.fromPeriod.innerHTML = options.map(o => `<option value="${o.key}">${o.label}</option>`).join("");
-    els.toPeriod.innerHTML = options.map(o => `<option value="${o.key}">${o.label}</option>`).join("");
-
-    if (!state.fromPeriodKey && options.length) state.fromPeriodKey = options[0].key;
-    if (!state.toPeriodKey && options.length) state.toPeriodKey = options[options.length - 1].key;
-
-    els.fromPeriod.value = state.fromPeriodKey;
-    els.toPeriod.value = state.toPeriodKey;
-  }
-
-  // default godina u kalendaru
-  if (!state.selectedCalendarYear) {
-    state.selectedCalendarYear = imports.length
-      ? imports[imports.length - 1].year
-      : new Date().getFullYear();
-  }
-
-  // default MONTH view (ali ne u YEAR/RANGE)
-  if (!state.selectedPeriodKey && !state.isYearView && !state.isRangeView && imports.length) {
-    const last = imports[imports.length - 1];
-    state.selectedPeriodKey = keyFromPeriod(last.year, last.month);
-  }
-
-  const monthsSet = new Set(
-    imports
-      .filter(i => i.year === state.selectedCalendarYear)
-      .map(i => i.month)
-  );
-
-  renderYearCalendar(els.periodList, {
-    year: state.selectedCalendarYear,
-    importedMonthsSet: monthsSet,
-    selectedKey: state.selectedPeriodKey,
-    isYearView: state.isYearView,
-  });
-
-  return imports;
+// ----------------- helpers -----------------
+function setPickerLabel(btn, key) {
+  if (!btn) return;
+  btn.textContent = key ? periodLabel(periodKeyToYM(key)) : "—";
 }
 
-async function loadPeriodData(year, month) {
-  const incomeMonthly = await dbGetByIndex("income_monthly", "by_period", [year, month]);
-  const expenses = await dbGetByIndex("expenses", "by_period", [year, month]);
-  const nCommission = await dbGetOneByIndex("n_commission", "by_period", [year, month]);
-  return { year, month, incomeMonthly, expenses, nCommission };
+function hidePops() {
+  els.fromPop?.classList.add("is-hidden");
+  els.toPop?.classList.add("is-hidden");
 }
 
-async function deletePeriod(year, month) {
-  await dbDeleteByIndex("imports", "by_period", [year, month]);
-  await dbDeleteByIndex("income_monthly", "by_period", [year, month]);
-  await dbDeleteByIndex("income_items", "by_period", [year, month]).catch(() => { });
-  await dbDeleteByIndex("expenses", "by_period", [year, month]);
-  await dbDeleteByIndex("n_commission", "by_period", [year, month]);
+function showPop(which) {
+  hidePops();
+  if (which === "FROM") els.fromPop?.classList.remove("is-hidden");
+  if (which === "TO") els.toPop?.classList.remove("is-hidden");
 }
 
 function makeKeyRange(fromKey, toKey) {
   if (!fromKey || !toKey) return [];
 
+  // ensure order
   let a = fromKey, b = toKey;
   if (a > b) [a, b] = [b, a];
 
@@ -128,23 +93,103 @@ function makeKeyRange(fromKey, toKey) {
     m++;
     if (m === 13) { m = 1; y++; }
   }
+
   return out;
 }
 
+async function loadPeriodData(year, month) {
+  const incomeMonthly = await dbGetByIndex("income_monthly", "by_period", [year, month]);
+  const expenses = await dbGetByIndex("expenses", "by_period", [year, month]);
+  const nCommission = await dbGetOneByIndex("n_commission", "by_period", [year, month]);
+  return { year, month, incomeMonthly, expenses, nCommission };
+}
 
+async function deletePeriod(year, month) {
+  await dbDeleteByIndex("imports", "by_period", [year, month]);
+  await dbDeleteByIndex("income_monthly", "by_period", [year, month]);
+  await dbDeleteByIndex("income_items", "by_period", [year, month]).catch(() => {});
+  await dbDeleteByIndex("expenses", "by_period", [year, month]);
+  await dbDeleteByIndex("n_commission", "by_period", [year, month]);
+}
+
+// ----------------- calendar render (main + range popovers) -----------------
+async function refreshPeriodCalendar() {
+  const imports = await dbGetAll("imports");
+  imports.sort((a, b) => a.year - b.year || a.month - b.month);
+
+  const fallbackYear = new Date().getFullYear();
+
+  // default calendar year = year of last import
+  if (!state.selectedCalendarYear) {
+    state.selectedCalendarYear = imports.length ? imports[imports.length - 1].year : fallbackYear;
+  }
+
+  // default MONTH selection (only if not in YEAR/RANGE)
+  if (!state.selectedPeriodKey && !state.isYearView && !state.isRangeView && imports.length) {
+    const last = imports[imports.length - 1];
+    state.selectedPeriodKey = keyFromPeriod(last.year, last.month);
+  }
+
+  // init range popup years
+  if (!state.rangeFromYear) state.rangeFromYear = state.selectedCalendarYear;
+  if (!state.rangeToYear) state.rangeToYear = state.selectedCalendarYear;
+
+  // RANGE popover calendars
+  const fromMonths = new Set(imports.filter(i => i.year === state.rangeFromYear).map(i => i.month));
+  renderYearCalendar(els.fromPop, {
+    year: state.rangeFromYear,
+    importedMonthsSet: fromMonths,
+    selectedKey: state.fromPeriodKey,
+    isYearView: false,
+  });
+
+  const toMonths = new Set(imports.filter(i => i.year === state.rangeToYear).map(i => i.month));
+  renderYearCalendar(els.toPop, {
+    year: state.rangeToYear,
+    importedMonthsSet: toMonths,
+    selectedKey: state.toPeriodKey,
+    isYearView: false,
+  });
+
+  // labels on range buttons
+  setPickerLabel(els.fromBtn, state.fromPeriodKey);
+  setPickerLabel(els.toBtn, state.toPeriodKey);
+
+  // MAIN sidebar calendar
+  const monthsSet = new Set(imports.filter(i => i.year === state.selectedCalendarYear).map(i => i.month));
+  renderYearCalendar(els.periodList, {
+    year: state.selectedCalendarYear,
+    importedMonthsSet: monthsSet,
+    selectedKey: state.selectedPeriodKey,
+    isYearView: state.isYearView,
+  });
+
+  return imports;
+}
+
+// ----------------- main render -----------------
 async function render() {
   const imports = await refreshPeriodCalendar();
 
   if (!imports.length) {
     els.status.textContent = "Uvezi prvi “Troškovnik … .xlsx”.";
+    renderKPIs({ income: null, expenses: null, net: null, nights: null }, els);
+    els.incomeTable.innerHTML = "";
+    els.expenseTable.innerHTML = "";
+    els.nNote.textContent = "";
     return;
   }
 
-  // =============== RANGE VIEW ===============
+  // ---------- RANGE VIEW ----------
   if (state.isRangeView) {
     const keys = makeKeyRange(state.fromPeriodKey, state.toPeriodKey);
+
     if (!keys.length) {
-      els.status.textContent = "Odaberi OD i DO period.";
+      els.status.textContent = "Odaberi OD i DO period pa klikni Prikaži.";
+      renderKPIs({ income: null, expenses: null, net: null, nights: null }, els);
+      els.incomeTable.innerHTML = "";
+      els.expenseTable.innerHTML = "";
+      els.nNote.textContent = "";
       return;
     }
 
@@ -166,6 +211,10 @@ async function render() {
 
     if (!rowsByMonth.length) {
       els.status.textContent = "U odabranom rasponu nema podataka.";
+      renderKPIs({ income: null, expenses: null, net: null, nights: null }, els);
+      els.incomeTable.innerHTML = "";
+      els.expenseTable.innerHTML = "";
+      els.nNote.textContent = "";
       return;
     }
 
@@ -181,7 +230,7 @@ async function render() {
     return;
   }
 
-  // =============== YEAR VIEW ===============
+  // ---------- YEAR VIEW ----------
   if (state.isYearView) {
     const year = state.selectedCalendarYear || new Date().getFullYear();
     els.status.textContent = `Prikaz: Godina ${year} — Apartman: ${state.aptFilter}`;
@@ -206,10 +255,12 @@ async function render() {
     return;
   }
 
-  // =============== MONTH VIEW ===============
+  // ---------- MONTH VIEW ----------
   if (!state.selectedPeriodKey) {
-    els.status.textContent = "Izaberi mjesec iz kalendara.";
-    return;
+    // fallback: last import
+    const last = imports[imports.length - 1];
+    state.selectedCalendarYear = last.year;
+    state.selectedPeriodKey = keyFromPeriod(last.year, last.month);
   }
 
   const { year, month } = periodKeyToYM(state.selectedPeriodKey);
@@ -231,10 +282,9 @@ async function render() {
   renderIncomeTable(els.incomeTable, report.perApt, state.aptFilter);
   renderExpenseTable(els.expenseTable, report, state.aptFilter);
   renderNNote(els.nNote, data.nCommission);
-  return;
-
 }
 
+// ----------------- import / backup / restore -----------------
 async function handleImport(file) {
   const buf = await file.arrayBuffer();
   const parsed = importTroskovnikXlsx(file, buf);
@@ -259,10 +309,15 @@ async function handleImport(file) {
   await dbPutMany("expenses", parsed.expenses);
   await dbPutOne("n_commission", parsed.nCommission);
 
-  // nakon importa: idi u MONTH view tog perioda
+  // after import -> MONTH view for that period
+  state.isRangeView = false;
   state.isYearView = false;
   state.selectedCalendarYear = parsed.period.year;
   state.selectedPeriodKey = keyFromPeriod(parsed.period.year, parsed.period.month);
+
+  // set range defaults if empty
+  if (!state.fromPeriodKey) state.fromPeriodKey = state.selectedPeriodKey;
+  if (!state.toPeriodKey) state.toPeriodKey = state.selectedPeriodKey;
 
   await render();
 }
@@ -281,6 +336,7 @@ async function exportBackup() {
   const jsonText = JSON.stringify(data, null, 2);
   const blob = new Blob([jsonText], { type: "application/json" });
 
+  // Desktop Save As (File System Access API)
   if (window.showSaveFilePicker) {
     try {
       const handle = await window.showSaveFilePicker({
@@ -297,6 +353,7 @@ async function exportBackup() {
     }
   }
 
+  // Mobile share
   try {
     const file = new File([blob], filename, { type: "application/json" });
     if (navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
@@ -307,6 +364,7 @@ async function exportBackup() {
     console.warn("Share failed, fallback:", e);
   }
 
+  // Fallback download
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -338,20 +396,103 @@ async function restoreBackupFile(file) {
   if (data.expenses?.length) await dbPutMany("expenses", data.expenses);
   if (data.n_commission?.length) await dbPutMany("n_commission", data.n_commission);
 
-  // nakon restore: idi na YEAR view tekuće (ili zadnje) godine
-  state.selectedPeriodKey = null;
-  state.isYearView = true;
-  state.selectedCalendarYear = state.selectedCalendarYear || new Date().getFullYear();
+  // After restore -> MONTH view on last import (if exists)
+  const imports = await dbGetAll("imports");
+  imports.sort((a, b) => a.year - b.year || a.month - b.month);
+
+  if (imports.length) {
+    const last = imports[imports.length - 1];
+    state.selectedCalendarYear = last.year;
+    state.selectedPeriodKey = keyFromPeriod(last.year, last.month);
+  } else {
+    state.selectedCalendarYear = new Date().getFullYear();
+    state.selectedPeriodKey = null;
+  }
+
+  state.isRangeView = false;
+  state.isYearView = false;
 
   await render();
 }
 
+// ----------------- events -----------------
 function attachEvents() {
+  // RANGE popover open
+  els.fromBtn?.addEventListener("click", (e) => { e.stopPropagation(); showPop("FROM"); });
+  els.toBtn?.addEventListener("click", (e) => { e.stopPropagation(); showPop("TO"); });
+
+  // click outside closes
+  document.addEventListener("click", () => hidePops());
+  els.fromPop?.addEventListener("click", (e) => e.stopPropagation());
+  els.toPop?.addEventListener("click", (e) => e.stopPropagation());
+
+  // FROM pop: prev/next year + month pick
+  els.fromPop?.addEventListener("click", async (e) => {
+    const prev = e.target.closest("[data-cal='prev']");
+    const next = e.target.closest("[data-cal='next']");
+    if (prev || next) {
+      state.rangeFromYear += prev ? -1 : 1;
+      await render();
+      return;
+    }
+
+    const cell = e.target.closest(".monthCell");
+    if (!cell || cell.classList.contains("is-disabled")) return;
+
+    const m = Number(cell.dataset.month);
+    state.fromPeriodKey = keyFromPeriod(state.rangeFromYear, m);
+    setPickerLabel(els.fromBtn, state.fromPeriodKey);
+    hidePops();
+  });
+
+  // TO pop: prev/next year + month pick
+  els.toPop?.addEventListener("click", async (e) => {
+    const prev = e.target.closest("[data-cal='prev']");
+    const next = e.target.closest("[data-cal='next']");
+    if (prev || next) {
+      state.rangeToYear += prev ? -1 : 1;
+      await render();
+      return;
+    }
+
+    const cell = e.target.closest(".monthCell");
+    if (!cell || cell.classList.contains("is-disabled")) return;
+
+    const m = Number(cell.dataset.month);
+    state.toPeriodKey = keyFromPeriod(state.rangeToYear, m);
+    setPickerLabel(els.toBtn, state.toPeriodKey);
+    hidePops();
+  });
+
+  // RANGE actions
+  els.btnShowRange?.addEventListener("click", async () => {
+    state.isRangeView = true;
+    state.isYearView = false;
+    state.selectedPeriodKey = null;
+    await render();
+  });
+
+  els.btnClearRange?.addEventListener("click", async () => {
+    state.isRangeView = false;
+
+    // back to last imported month
+    const imports = await dbGetAll("imports");
+    imports.sort((a, b) => a.year - b.year || a.month - b.month);
+    const last = imports[imports.length - 1];
+    if (last) {
+      state.selectedCalendarYear = last.year;
+      state.selectedPeriodKey = keyFromPeriod(last.year, last.month);
+    }
+    await render();
+  });
+
+  // Topbar backup/export
   els.btnBackup?.addEventListener("click", async () => {
     try { await exportBackup(); }
     catch (e) { console.error(e); alert(e.message || "Backup greška"); }
   });
 
+  // Restore file input
   els.backupInput?.addEventListener("change", async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -360,6 +501,7 @@ function attachEvents() {
     finally { els.backupInput.value = ""; }
   });
 
+  // Import XLSX input
   els.fileInput?.addEventListener("change", async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -368,6 +510,7 @@ function attachEvents() {
     finally { els.fileInput.value = ""; }
   });
 
+  // Filters
   els.aptFilter?.addEventListener("change", async () => {
     state.aptFilter = els.aptFilter.value;
     await render();
@@ -378,47 +521,25 @@ function attachEvents() {
     await render();
   });
 
-  els.fromPeriod?.addEventListener("change", async () => {
-    state.fromPeriodKey = els.fromPeriod.value;
-    await render();
-  });
-
-  els.toPeriod?.addEventListener("change", async () => {
-    state.toPeriodKey = els.toPeriod.value;
-    await render();
-  });
-
-  els.btnShowRange?.addEventListener("click", async () => {
-    state.isRangeView = true;
-    state.isYearView = false;
-    state.selectedPeriodKey = null;
-    await render();
-  });
-
-  els.btnClearRange?.addEventListener("click", async () => {
-    state.isRangeView = false;
-    await render();
-  });
-
-
+  // Sidebar calendar click
   els.periodList?.addEventListener("click", async (e) => {
-    // klik na GODINU: toggle YEAR/MONTH
+    // click year toggles YEAR/MONTH
     const yearClick = e.target.closest("[data-cal='year']");
     if (yearClick) {
       state.isRangeView = false;
       state.isYearView = !state.isYearView;
-      state.selectedPeriodKey = state.isYearView ? null : state.selectedPeriodKey;
+      if (state.isYearView) state.selectedPeriodKey = null;
       await render();
       return;
     }
 
-    // strelice: mijenjaju godinu u kalendaru
+    // arrows change calendar year
     const prev = e.target.closest("[data-cal='prev']");
     const next = e.target.closest("[data-cal='next']");
     if (prev) { state.selectedCalendarYear--; await render(); return; }
     if (next) { state.selectedCalendarYear++; await render(); return; }
 
-    // klik na MJESEC: MONTH view
+    // month click -> MONTH view
     const cell = e.target.closest(".monthCell");
     if (!cell || cell.classList.contains("is-disabled")) return;
 
@@ -429,6 +550,7 @@ function attachEvents() {
     await render();
   });
 
+  // Print
   els.btnPrint?.addEventListener("click", () => printToPdf());
 }
 

@@ -48,20 +48,24 @@
 
       <h3>Raspon (OD–DO)</h3>
 
-      <div class="field">
-        <label>Od</label>
-        <select id="fromPeriod"></select>
-      </div>
+      <div class="rangePick">
+  <div class="field">
+    <label>Od</label>
+    <button id="fromPeriodBtn" class="pickerBtn" type="button">—</button>
+    <div id="fromCalPop" class="calPop is-hidden"></div>
+  </div>
 
-      <div class="field">
-        <label>Do</label>
-        <select id="toPeriod"></select>
-      </div>
+  <div class="field">
+    <label>Do</label>
+    <button id="toPeriodBtn" class="pickerBtn" type="button">—</button>
+    <div id="toCalPop" class="calPop is-hidden"></div>
+  </div>
 
-      <div class="row" style="gap:8px;">
-        <button id="btnShowRange" class="btn secondary" style="flex:1;">Prikaži raspon</button>
-        <button id="btnClearRange" class="btn secondary" style="flex:1;">Reset</button>
-      </div>
+  <div class="rangeActions">
+    <button id="btnShowRange" class="btnMini" type="button">Prikaži</button>
+    <button id="btnClearRange" class="btnMini" type="button">Reset</button>
+  </div>
+</div>
 
       <div class="divider"></div>
 
