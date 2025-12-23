@@ -1,13 +1,13 @@
-// js/income.js
-import { dbGetAll, dbGetOneByIndex, dbPutOne, makeId } from "./db.js";
-import { keyFromPeriod, periodKeyToYM } from "./utils.js";
-import { renderYearCalendar } from "./ui.js";
-import { periodLabel } from "./parseFilename.js";
+// js/income/income.page.js
+import { dbGetAll, dbGetOneByIndex, dbPutOne, makeId } from "../db/db.js";
+import { keyFromPeriod, periodKeyToYM } from "../shared/utils.js";
+import { renderYearCalendar } from "../shared/ui.js";
+import { periodLabel } from "../shared/parseFilename.js";
 import {
     renderIncomeSummary,
     renderIncomeItemsTable,
     renderIncomeByApt
-} from "./incomeUi.js";
+} from "./income.ui.js";
 
 console.log("[income.js] loaded manual-income-v1", new Date().toISOString());
 window.__incomeLoaded = true;

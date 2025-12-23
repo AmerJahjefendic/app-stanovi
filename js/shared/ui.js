@@ -1,4 +1,4 @@
-// js/ui.js
+// js/shared/ui.js
 import { fmtEUR, fmtNum } from "./utils.js";
 
 export function renderPeriodList(root, periods, selectedKey) {

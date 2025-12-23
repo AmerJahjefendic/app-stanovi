@@ -1,5 +1,5 @@
-// js/mappingConfig.js
-import { dbGetAllCategoryAliases } from "./db.js";
+// js/shared/mappingConfig.js
+import { dbGetAllCategoryAliases } from "../db/db.js";
 
 function norm(s) {
   return String(s || "")

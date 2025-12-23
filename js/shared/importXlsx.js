@@ -1,5 +1,5 @@
-// js/importXlsx.js
-import { makeId } from "./db.js";
+// js/shared/importXlsx.js
+import { makeId } from "../db/db.js";
 import { parsePeriodFromFilename } from "./parseFilename.js";
 import { mapExpenseCategory } from "./mappingConfig.js";
 

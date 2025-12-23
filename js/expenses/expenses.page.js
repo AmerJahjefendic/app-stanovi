@@ -1,15 +1,15 @@
-// js/expenses.js
-import { keyFromPeriod, periodKeyToYM } from "./utils.js";
-import { renderYearCalendar } from "./ui.js";
-import { dbGetAll, dbPutCategoryAlias, dbPutOne, makeId } from "./db.js";
-import { periodLabel } from "./parseFilename.js";
-import { loadCategoryAliases, mapExpenseCategory } from "./mappingConfig.js";
-import { renderYearBreakdownTable } from "./expensesUi.js";
+// js/expenses/expenses.page.js
+import { keyFromPeriod, periodKeyToYM } from "../shared/utils.js";
+import { renderYearCalendar } from "../shared/ui.js";
+import { dbGetAll, dbPutCategoryAlias, dbPutOne, makeId } from "../db/db.js";
+import { periodLabel } from "../shared/parseFilename.js";
+import { loadCategoryAliases, mapExpenseCategory } from "../shared/mappingConfig.js";
+import { renderYearBreakdownTable } from "./expenses.ui.js";
 import {
     renderExpensesByCategory,
     renderExpensesList,
     renderExpenseFilters,
-} from "./expensesUi.js";
+} from "./expenses.ui.js";
 
 const els = {
     calendar: document.getElementById("expCalendar"),

@@ -1,4 +1,4 @@
-// js/metrics.js
+// js/reports/metrics.service.js
 
 function round2(x) {
   return Math.round((Number(x || 0) + Number.EPSILON) * 100) / 100;

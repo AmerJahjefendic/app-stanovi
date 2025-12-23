@@ -1,4 +1,4 @@
-// js/expensesUi.js
+// js/expenses/expenses.ui.js
 
 // ---------- FORMAT ----------
 export function fmtEUR(x) {

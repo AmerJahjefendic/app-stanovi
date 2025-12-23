@@ -1,5 +1,5 @@
-// js/incomeUi.js
-import { fmtEUR, fmtNum } from "./utils.js";
+// js/income/income.ui.js
+import { fmtEUR, fmtNum } from "../shared/utils.js";
 
 // ---------- SUMMARY BOX (A/Z/N breakdown) ----------
 export function renderIncomeSummary(root, { sumsAZN, nBreakdown, total }) {

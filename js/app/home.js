@@ -1,8 +1,8 @@
-// js/app.js
-import { loadCategoryAliases } from "./mappingConfig.js";
+// js/app/home.js
+import { loadCategoryAliases } from "../shared/mappingConfig.js";
 await loadCategoryAliases();
 
-import { state } from "./state.js";
+import { state } from "../shared/state.js";
 import {
   dbGetAll,
   dbGetByIndex,
@@ -10,20 +10,20 @@ import {
   dbPutOne,
   dbPutMany,
   dbDeleteByIndex,
-} from "./db.js";
+} from "../db/db.js";
 
-import { keyFromPeriod, periodKeyToYM } from "./utils.js";
-import { importTroskovnikXlsx } from "./importXlsx.js";
-import { periodLabel } from "./parseFilename.js";
-import { computePeriodReport, computeYearReport, computeRangeReport } from "./metrics.js";
-import { printToPdf } from "./pdf.js";
+import { keyFromPeriod, periodKeyToYM } from "../shared/utils.js";
+import { importTroskovnikXlsx } from "../shared/importXlsx.js";
+import { periodLabel } from "../shared/parseFilename.js";
+import { computePeriodReport, computeYearReport, computeRangeReport } from "../reports/metrics.service.js";
+import { printToPdf } from "../shared/pdf.js";
 import {
   renderKPIs,
   renderIncomeTable,
   renderExpenseTable,
   renderNNote,
   renderYearCalendar,
-} from "./ui.js";
+} from "../shared/ui.js";
 
 const els = {
   // range buttons + popovers
