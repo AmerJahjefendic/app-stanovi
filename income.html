@@ -20,7 +20,9 @@
         </div>
 
         <div class="actions">
+            <button class="btn" id="btnOpenIncomeModal" type="button">+ Dodaj prihod</button>
             <a class="btn secondary" href="index.html">← Nazad</a>
+
         </div>
     </header>
 
@@ -40,6 +42,7 @@
                 </select>
             </div>
 
+            <div class="divider"></div>
         </aside>
 
         <section class="content">
@@ -69,6 +72,69 @@
             </div>
         </section>
     </main>
+
+    <div id="incomeModal" class="modal is-hidden" aria-hidden="true">
+        <div class="modalBackdrop" data-modal-close></div>
+
+        <div class="modalCard" role="dialog" aria-modal="true" aria-labelledby="incomeModalTitle">
+            <div class="modalHeader">
+                <div class="modalTitle" id="incomeModalTitle">Manual unos prihoda</div>
+                <button class="btn secondary" type="button" data-modal-close>✕</button>
+            </div>
+
+            <div class="modalBody">
+                <div class="field">
+                    <label>Apartman</label>
+                    <select id="incAddApt">
+                        <option value="A">A</option>
+                        <option value="Z">Z</option>
+                        <option value="N">N</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label>Iznos (EUR)</label>
+                    <input id="incAddAmount" type="number" step="0.01" min="0" placeholder="npr 120.00" />
+                </div>
+
+                <div class="field">
+                    <label>Platforma</label>
+                    <select id="incAddPlatform">
+                        <option value="airbnb">Airbnb</option>
+                        <option value="booking">Booking</option>
+                        <option value="vrbo">VRBO</option>
+                        <option value="direct">Direktno</option>
+                        <option value="other">Ostalo</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label>Check-in (opciono)</label>
+                    <input id="incAddCheckin" type="date" />
+                </div>
+
+                <div class="field">
+                    <label>Check-out (opciono)</label>
+                    <input id="incAddCheckout" type="date" />
+                </div>
+
+                <div class="field">
+                    <label>Noćenja (opciono)</label>
+                    <input id="incAddNights" type="number" step="1" min="0"
+                        placeholder="ako ne uneseš, izračuna se iz datuma" />
+                </div>
+
+                <div class="field">
+                    <label>Napomena</label>
+                    <input id="incAddNote" type="text" placeholder="npr otkazana rezervacija / popust / ..." />
+                </div>
+            </div>
+
+            <div class="modalFooter">
+                <button id="btnAddIncomeItem" class="btn" type="button">Sačuvaj prihod</button>
+            </div>
+        </div>
+    </div>
 
     <script type="module" src="js/income.js"></script>
 </body>

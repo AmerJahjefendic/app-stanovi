@@ -505,4 +505,31 @@ td.right {
 .calPop .monthCell.is-imported{ background: rgba(0,200,120,.12); border:1px solid rgba(0,200,120,.25); }
 .calPop .monthCell.is-missing { background: rgba(220,60,60,.10);  border:1px solid rgba(220,60,60,.25); }
 
-
+.modal { position: fixed; inset: 0; z-index: 9999; }
+.modalBackdrop {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,.55);
+}
+.modalCard{
+  position: relative;
+  width: min(520px, calc(100% - 24px));
+  margin: 72px auto 0;
+  background: rgba(10, 20, 35, .98);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.45);
+  overflow: hidden;
+}
+.modalHeader{
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+}
+.modalTitle{ font-weight: 700; }
+.modalBody{ padding: 14px; display: grid; gap: 10px; }
+.modalFooter{
+  padding: 12px 14px;
+  border-top: 1px solid rgba(255,255,255,.10);
+  display:flex; justify-content:flex-end; gap:10px;
+}
+.is-hidden{ display:none !important; }

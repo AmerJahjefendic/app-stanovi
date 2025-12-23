@@ -1,6 +1,6 @@
 // js/db.js
 const DB_NAME = "appstanovi_db";
-const DB_VER = 5;
+const DB_VER = 6;
 
 function openDB() {
   return new Promise((resolve, reject) => {

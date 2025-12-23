@@ -107,9 +107,10 @@ function makeKeyRange(fromKey, toKey) {
 
 async function loadPeriodData(year, month) {
   const incomeMonthly = await dbGetByIndex("income_monthly", "by_period", [year, month]);
+  const incomeItems = await dbGetByIndex("income_items", "by_period", [year, month]).catch(() => []);
   const expenses = await dbGetByIndex("expenses", "by_period", [year, month]);
   const nCommission = await dbGetOneByIndex("n_commission", "by_period", [year, month]);
-  return { year, month, incomeMonthly, expenses, nCommission };
+  return { year, month, incomeMonthly, incomeItems, expenses, nCommission };
 }
 
 async function deletePeriod(year, month) {
@@ -209,11 +210,12 @@ async function render() {
       const { year, month } = periodKeyToYM(key);
 
       const incomeMonthly = await dbGetByIndex("income_monthly", "by_period", [year, month]);
+      const incomeItems = await dbGetByIndex("income_items", "by_period", [year, month]).catch(() => []);
       const expenses = await dbGetByIndex("expenses", "by_period", [year, month]);
       const nCommission = await dbGetOneByIndex("n_commission", "by_period", [year, month]);
 
-      if (incomeMonthly.length || expenses.length || nCommission) {
-        rowsByMonth.push({ incomeMonthly, expenses, nCommission });
+      if (incomeMonthly.length || incomeItems.length || expenses.length || nCommission) {
+        rowsByMonth.push({ incomeMonthly, incomeItems, expenses, nCommission });
       }
     }
 
@@ -246,9 +248,10 @@ async function render() {
     const rowsByMonth = [];
     for (const imp of imports.filter(i => i.year === year)) {
       const incomeMonthly = await dbGetByIndex("income_monthly", "by_period", [imp.year, imp.month]);
+      const incomeItems = await dbGetByIndex("income_items", "by_period", [imp.year, imp.month]).catch(() => []);
       const expenses = await dbGetByIndex("expenses", "by_period", [imp.year, imp.month]);
       const nCommission = await dbGetOneByIndex("n_commission", "by_period", [imp.year, imp.month]);
-      rowsByMonth.push({ incomeMonthly, expenses, nCommission });
+      rowsByMonth.push({ incomeMonthly, incomeItems, expenses, nCommission });
     }
 
     const report = computeYearReport(rowsByMonth, {
@@ -280,6 +283,7 @@ async function render() {
   const report = computePeriodReport(
     {
       incomeMonthly: data.incomeMonthly,
+      incomeItems: data.incomeItems,
       expenses: data.expenses,
       nCommission: data.nCommission,
     },
