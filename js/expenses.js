@@ -1,7 +1,7 @@
 // js/expenses.js
-import { dbGetAll, dbPutCategoryAlias } from "./db.js";
 import { keyFromPeriod, periodKeyToYM } from "./utils.js";
 import { renderYearCalendar } from "./ui.js";
+import { dbGetAll, dbPutCategoryAlias, dbPutOne, makeId } from "./db.js";
 import { periodLabel } from "./parseFilename.js";
 import { loadCategoryAliases, mapExpenseCategory } from "./mappingConfig.js";
 import { renderYearBreakdownTable } from "./expensesUi.js";
@@ -13,6 +13,22 @@ import {
 
 const els = {
     calendar: document.getElementById("expCalendar"),
+
+    // ===== MODAL elements =====
+    btnOpenExpenseModal: document.getElementById("btnOpenExpenseModal"),
+    expModal: document.getElementById("expModal"),
+    btnCloseExpenseModal: document.getElementById("btnCloseExpenseModal"),
+    btnCancelExpense: document.getElementById("btnCancelExpense"),
+    btnSaveExpense: document.getElementById("btnSaveExpense"),
+
+    expAddAmountBam: document.getElementById("expAddAmountBam"),
+    expAddCategory: document.getElementById("expAddCategory"),
+    btnAddCategory: document.getElementById("btnAddCategory"),
+    expAddScope: document.getElementById("expAddScope"),
+    expAptWrap: document.getElementById("expAptWrap"),
+    expAddApt: document.getElementById("expAddApt"),
+    expAddDate: document.getElementById("expAddDate"),
+    expAddNote: document.getElementById("expAddNote"),
 
     status: document.getElementById("expStatus"),
     expApt: document.getElementById("expApt"),
@@ -128,6 +144,92 @@ function buildRenderableExpenses(rawExpenses, incomeMonthlyRows, shareRule) {
     return out;
 }
 
+function round2(x) {
+    return Math.round((Number(x || 0) + Number.EPSILON) * 100) / 100;
+}
+
+// FX: 1 EUR = 1.95583 BAM (default). Možeš kasnije staviti settings.
+const FX_KEY = "fxRateBamPerEur";
+function getFxRate() {
+    const v = Number(localStorage.getItem(FX_KEY));
+    return Number.isFinite(v) && v > 0 ? v : 1.95583;
+}
+
+function openModal() {
+    els.expModal?.classList.remove("is-hidden");
+    els.expModal?.setAttribute("aria-hidden", "false");
+    setTimeout(() => els.expAddAmountBam?.focus(), 0);
+}
+
+function closeModal() {
+    els.expModal?.classList.add("is-hidden");
+    els.expModal?.setAttribute("aria-hidden", "true");
+}
+
+function syncScopeUI() {
+    const sc = els.expAddScope?.value || "SHARED";
+    const showApt = sc === "APARTMENT";
+    els.expAptWrap?.classList.toggle("is-hidden", !showApt);
+}
+
+// period: iz date ako postoji, inače iz izabranog mjeseca (MONTH view)
+function periodFromDateOrSelected(dateStr) {
+    if (dateStr) {
+        const d = new Date(dateStr);
+        if (Number.isFinite(d.getTime())) {
+            return { year: d.getFullYear(), month: d.getMonth() + 1 };
+        }
+    }
+    if (state.selectedPeriodKey) return periodKeyToYM(state.selectedPeriodKey);
+    return null;
+}
+
+async function ensureImportPeriod(year, month) {
+    const imports = await dbGetAll("imports");
+    const exists = imports.some(i => i.year === year && i.month === month);
+    if (exists) return;
+
+    await dbPutOne("imports", {
+        id: makeId("imp"),
+        year,
+        month,
+        filename: "MANUAL",
+        imported_at: new Date().toISOString(),
+    });
+}
+
+// kategorije: čuvamo u localStorage da radi "Dodaj kategoriju"
+const CAT_KEY = "expenseCategories";
+function getCategoriesLocal() {
+    try {
+        const arr = JSON.parse(localStorage.getItem(CAT_KEY) || "[]");
+        return Array.isArray(arr) ? arr : [];
+    } catch {
+        return [];
+    }
+}
+function saveCategoriesLocal(arr) {
+    localStorage.setItem(CAT_KEY, JSON.stringify(arr));
+}
+function uniqueSorted(arr) {
+    return [...new Set((arr || []).map(x => String(x || "").trim()).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, "bs"));
+}
+
+function handleAddCategory() {
+    const name = prompt("Unesi naziv nove kategorije:");
+    if (!name) return;
+    const cat = String(name).trim();
+    if (!cat) return;
+
+    const cats = uniqueSorted([...getCategoriesLocal(), cat]);
+    saveCategoriesLocal(cats);
+
+    // refresh oba selecta (filter + modal)
+    renderExpenseFilters(els.expCat, cats, state.cat);
+    renderExpenseFilters(els.expAddCategory, cats, cat);
+}
+
 // ---------- data ----------
 async function load() {
     const shareRule = getShareRule();
@@ -198,6 +300,26 @@ async function render() {
     // ===== MERGE UI =====
     const catsAll = Array.from(new Set(all.map(e => normCat(e)))).sort();
 
+    // ===== MODAL category dropdown =====
+    const catsForSelect = uniqueSorted([
+        ...catsAll,
+        ...getCategoriesLocal(),
+        "Čišćenje",
+        "Održavanje",
+        "Računi",
+        "Potrošni materijal",
+        "Ostalo",
+    ]);
+
+    saveCategoriesLocal(catsForSelect);
+
+    // popuni modal kategorije (da nije prazan)
+    renderExpenseFilters(els.expAddCategory, catsForSelect, els.expAddCategory?.value || "ALL");
+    if (els.expAddCategory?.value === "ALL") {
+        // da ne ostane ALL u modalu, selektuj prvu realnu
+        els.expAddCategory.value = catsForSelect[0] || "Ostalo";
+    }
+
     const prevFrom = els.mergeFrom.value || "ALL";
     const prevTo = els.mergeTo.value || "ALL";
 
@@ -253,6 +375,68 @@ async function render() {
 
     renderExpensesByCategory(els.byCat, filtered);
     renderExpensesList(els.list, filtered);
+}
+
+async function handleSaveExpense() {
+    const amountBam = Number(els.expAddAmountBam?.value || 0);
+    if (!Number.isFinite(amountBam) || amountBam <= 0) {
+        alert("Unesi ispravan iznos (BAM).");
+        return;
+    }
+
+    const categoryRaw = String(els.expAddCategory?.value || "").trim();
+    if (!categoryRaw || categoryRaw === "ALL") {
+        alert("Odaberi kategoriju.");
+        return;
+    }
+
+    const scope = els.expAddScope?.value || "SHARED";
+    const apartment = scope === "APARTMENT" ? (els.expAddApt?.value || "A") : null;
+
+    const dateStr = els.expAddDate?.value || "";
+    const period = periodFromDateOrSelected(dateStr);
+    if (!period) {
+        alert("Unesi datum ili odaberi mjesec u kalendaru (MONTH view) da se odredi period.");
+        return;
+    }
+
+    const fx = getFxRate();
+    const amountEur = round2(amountBam / fx);
+
+    const item = {
+        id: makeId("exp"),
+        year: period.year,
+        month: period.month,
+
+        amount_bam: round2(amountBam),
+        amount_eur: amountEur,
+
+        scope,                 // "SHARED" / "APARTMENT"
+        apartment,             // null ili "A"/"Z"/"N"
+
+        raw_category: categoryRaw, // da imaš original
+        category: categoryRaw,     // normCat će je kasnije mapirati
+        date: dateStr || null,
+        note: String(els.expAddNote?.value || "").trim(),
+        source: "Manual",
+        created_at: new Date().toISOString(),
+    };
+
+    try {
+        await dbPutOne("expenses", item);
+        await ensureImportPeriod(period.year, period.month);
+
+        // reset inputa (ostavi scope + category radi brzog unosa)
+        els.expAddAmountBam.value = "";
+        els.expAddDate.value = "";
+        els.expAddNote.value = "";
+
+        closeModal();
+        await render();
+    } catch (e) {
+        console.error(e);
+        alert(e?.message || "Greška pri snimanju troška.");
+    }
 }
 
 function attach() {
@@ -333,26 +517,51 @@ function attach() {
         await render();
     });
 
-      // Klik na kategoriju u tabeli -> toggle filter kategorije
-  els.byCat?.addEventListener("click", async (e) => {
-    const tr = e.target.closest("tr[data-cat]");
-    if (!tr) return;
+    // Klik na kategoriju u tabeli -> toggle filter kategorije
+    els.byCat?.addEventListener("click", async (e) => {
+        const tr = e.target.closest("tr[data-cat]");
+        if (!tr) return;
 
-    const cat = tr.dataset.cat;
-    if (!cat) return;
+        const cat = tr.dataset.cat;
+        if (!cat) return;
 
-    // Ako je već filtrirano na ovu kategoriju, resetuj na ALL
-    // Inače, filtriraj na ovu kategoriju
-    if (state.cat === cat) {
-      state.cat = "ALL";
-      if (els.expCat) els.expCat.value = "ALL";
-    } else {
-      state.cat = cat;
-      if (els.expCat) els.expCat.value = cat;
-    }
+        // Ako je već filtrirano na ovu kategoriju, resetuj na ALL
+        // Inače, filtriraj na ovu kategoriju
+        if (state.cat === cat) {
+            state.cat = "ALL";
+            if (els.expCat) els.expCat.value = "ALL";
+        } else {
+            state.cat = cat;
+            if (els.expCat) els.expCat.value = cat;
+        }
 
-    await render();
-  });
+        await render();
+    });
+
+    // ===== MODAL events =====
+els.btnOpenExpenseModal?.addEventListener("click", () => {
+  syncScopeUI();
+  openModal();
+});
+
+els.btnCloseExpenseModal?.addEventListener("click", closeModal);
+els.btnCancelExpense?.addEventListener("click", closeModal);
+
+els.expModal?.addEventListener("click", (e) => {
+  if (e.target?.dataset?.close) closeModal();
+});
+
+els.expAddScope?.addEventListener("change", syncScopeUI);
+
+els.btnAddCategory?.addEventListener("click", handleAddCategory);
+
+els.btnSaveExpense?.addEventListener("click", handleSaveExpense);
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && els.expModal && !els.expModal.classList.contains("is-hidden")) {
+    closeModal();
+  }
+});
 
 }
 

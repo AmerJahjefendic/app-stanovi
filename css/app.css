@@ -533,3 +533,33 @@ td.right {
   display:flex; justify-content:flex-end; gap:10px;
 }
 .is-hidden{ display:none !important; }
+
+.modal.is-hidden { display:none !important; }
+
+.modal { position: fixed; inset: 0; z-index: 9999; }
+.modalBackdrop { position:absolute; inset:0; background: rgba(0,0,0,.55); }
+
+.modalCard{
+  position: relative;
+  width: min(520px, calc(100% - 24px));
+  margin: 60px auto;
+  background: rgba(20,20,24,.98);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 18px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.45);
+  overflow: hidden;
+}
+
+.modalHeader, .modalFooter{
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.modalFooter{ border-bottom:none; border-top: 1px solid rgba(255,255,255,.08); gap:10px; justify-content:flex-end; }
+
+.modalBody{ padding: 14px 16px; display:grid; gap:12px; }
+.modalTitle{ font-weight: 800; font-size: 16px; }
+.modalSub{ opacity:.75; font-size: 12px; margin-top: 2px; }
+
+#expAptWrap.is-hidden{ display:none; }

@@ -18,8 +18,8 @@
         <div class="subtitle">Troškovi (detaljno)</div>
       </div>
     </div>
-
     <div class="actions">
+      <button id="btnOpenExpenseModal" class="btn">+ Novi trošak</button>
       <a class="btn secondary" href="index.html">← Nazad</a>
     </div>
   </header>
@@ -90,6 +90,70 @@
       </div>
     </section>
   </main>
+  <!-- EXPENSE MODAL -->
+  <div id="expModal" class="modal is-hidden" aria-hidden="true">
+    <div class="modalBackdrop" data-close="1"></div>
+
+    <div class="modalCard" role="dialog" aria-modal="true" aria-labelledby="expModalTitle">
+      <div class="modalHeader">
+        <div>
+          <div id="expModalTitle" class="modalTitle">Novi trošak</div>
+          <div class="modalSub">Unos u BAM (automatski preračun u EUR)</div>
+        </div>
+        <button id="btnCloseExpenseModal" class="btn secondary" type="button">✕</button>
+      </div>
+
+      <div class="modalBody">
+
+        <div class="field">
+          <label>Iznos (BAM)</label>
+          <input id="expAddAmountBam" type="number" step="0.01" min="0" placeholder="npr 45.00" />
+        </div>
+
+        <div class="field">
+          <label>Kategorija</label>
+          <div class="row" style="gap:8px;">
+            <select id="expAddCategory" style="flex:1;"></select>
+            <button id="btnAddCategory" class="btn secondary" type="button">+ Kategorija</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Scope</label>
+          <select id="expAddScope">
+            <option value="SHARED">Shared (A+Z)</option>
+            <option value="APARTMENT">Apartman</option>
+          </select>
+        </div>
+
+        <div class="field" id="expAptWrap">
+          <label>Apartman</label>
+          <select id="expAddApt">
+            <option value="A">A</option>
+            <option value="Z">Z</option>
+            <option value="N">N</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Datum (opciono)</label>
+          <input id="expAddDate" type="date" />
+          <small class="note">Ako ne uneseš datum, period se uzima iz odabranog mjeseca (MONTH view).</small>
+        </div>
+
+        <div class="field">
+          <label>Napomena</label>
+          <input id="expAddNote" type="text" placeholder="npr račun, popravka, ..." />
+        </div>
+
+      </div>
+
+      <div class="modalFooter">
+        <button id="btnSaveExpense" class="btn" type="button">Sačuvaj</button>
+        <button id="btnCancelExpense" class="btn secondary" type="button">Otkaži</button>
+      </div>
+    </div>
+  </div>
 
   <script type="module" src="js/expenses.js"></script>
 </body>
