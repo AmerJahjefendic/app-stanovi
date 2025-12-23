@@ -1,7 +1,44 @@
 // js/reports/metrics.service.js
+import { APARTMENTS, APT_LIST, SHARE_RULE, SCOPE } from "../shared/constants.js";
+import { safeDate } from "../shared/utils.js";
 
 function round2(x) {
   return Math.round((Number(x || 0) + Number.EPSILON) * 100) / 100;
+}
+
+// Helper to build KPI from per-apartment aggregates
+function buildKpiFromPerApt(perApt, aptFilter, sharedTotal, nCommission) {
+  if (APT_LIST.includes(aptFilter)) {
+    const r = perApt[aptFilter] || { income: 0, expenses: 0, net: 0, nights: 0 };
+    const sharedAlloc = aptFilter === APARTMENTS.A
+      ? perApt.A?.expenses || 0
+      : aptFilter === APARTMENTS.Z
+        ? perApt.Z?.expenses || 0
+        : 0;
+
+    return {
+      income: round2(r.income),
+      expenses: round2(r.expenses),
+      net: round2(r.net),
+      nights: round2(r.nights),
+      sharedTotal: round2(sharedTotal),
+      sharedAlloc: round2(sharedAlloc),
+      nCommission: round2(nCommission),
+    };
+  }
+
+  const totalIncome = (perApt.A?.income || 0) + (perApt.Z?.income || 0) + (perApt.N?.income || 0);
+  const totalExpenses = (perApt.A?.expenses || 0) + (perApt.Z?.expenses || 0) + (perApt.N?.expenses || 0);
+  const totalNights = (perApt.A?.nights || 0) + (perApt.Z?.nights || 0) + (perApt.N?.nights || 0);
+
+  return {
+    income: round2(totalIncome),
+    expenses: round2(totalExpenses),
+    net: round2(totalIncome - totalExpenses),
+    nights: round2(totalNights),
+    sharedTotal: round2(sharedTotal),
+    nCommission: round2(nCommission),
+  };
 }
 
 // Razlika u noćima na osnovu datuma (checkout - checkin).
@@ -9,9 +46,9 @@ function round2(x) {
 function nightsFromDates(checkin, checkout) {
   if (!checkin || !checkout) return 0;
 
-  const a = new Date(checkin);
-  const b = new Date(checkout);
-  if (!Number.isFinite(a.getTime()) || !Number.isFinite(b.getTime())) return 0;
+  const a = safeDate(checkin);
+  const b = safeDate(checkout);
+  if (!a || !b) return 0;
 
   const ms = b.getTime() - a.getTime();
   const nights = Math.round(ms / (1000 * 60 * 60 * 24));
@@ -58,20 +95,23 @@ export function computePeriodReport(
   // ✅ KLJUČ: da nema dupliranja
   // Ako imamo income_items (bilo koje) -> koristimo SAMO njih
   // Inače koristimo income_monthly
-  const useItems = Array.isArray(incomeItems) && incomeItems.length > 0;
+  const incMonthlyArr = Array.isArray(incomeMonthly) ? incomeMonthly : [];
+  const incItemsArr = Array.isArray(incomeItems) ? incomeItems : [];
+  const expArr = Array.isArray(expenses) ? expenses : [];
+  const useItems = incItemsArr.length > 0;
 
   const incomeByApt = Object.fromEntries(
-    ["A", "Z", "N"].map((a) => [a, { income: 0, nights: 0 }])
+    APT_LIST.map((a) => [a, { income: 0, nights: 0 }])
   );
 
   if (useItems) {
-    const byItems = computeIncomeFromItems(incomeItems);
-    for (const a of ["A", "Z", "N"]) {
+    const byItems = computeIncomeFromItems(incItemsArr);
+    for (const a of APT_LIST) {
       incomeByApt[a].income = byItems[a].income || 0;
       incomeByApt[a].nights = byItems[a].nights || 0;
     }
   } else {
-    for (const row of incomeMonthly || []) {
+    for (const row of incMonthlyArr) {
       if (!incomeByApt[row.apartment]) continue;
       incomeByApt[row.apartment].income += Number(row.income_eur || 0) || 0;
       incomeByApt[row.apartment].nights += Number(row.nights || 0) || 0;
@@ -79,9 +119,9 @@ export function computePeriodReport(
   }
 
   // Expenses
-  const shared = (expenses || []).filter((e) => e.scope === "SHARED");
-  const nExp = (expenses || []).filter(
-    (e) => e.scope === "APARTMENT" && e.apartment === "N"
+  const shared = expArr.filter((e) => e.scope === SCOPE.SHARED);
+  const nExp = expArr.filter(
+    (e) => e.scope === SCOPE.APARTMENT && e.apartment === APARTMENTS.N
   );
 
   const sharedTotal = shared.reduce((s, e) => s + (Number(e.amount_eur || 0) || 0), 0);
@@ -94,10 +134,10 @@ export function computePeriodReport(
   let aShare = 0.5;
   let zShare = 0.5;
 
-  if (shareRule === "HALF") {
+  if (shareRule === SHARE_RULE.HALF) {
     aShare = 0.5;
     zShare = 0.5;
-  } else if (shareRule === "INCOME") {
+  } else if (shareRule === SHARE_RULE.INCOME) {
     const denom = A.income + Z.income;
     if (denom > 0) {
       aShare = A.income / denom;
@@ -138,38 +178,7 @@ export function computePeriodReport(
       net: nComm - nTotal,
     },
   };
-
-  let kpi;
-  if (aptFilter === "A" || aptFilter === "Z" || aptFilter === "N") {
-    const r = perApt[aptFilter];
-    kpi = {
-      income: round2(r.income),
-      expenses: round2(r.expenses),
-      net: round2(r.net),
-      nights: round2(r.nights),
-      sharedTotal: round2(sharedTotal),
-      sharedAlloc:
-        aptFilter === "A"
-          ? round2(sharedA)
-          : aptFilter === "Z"
-            ? round2(sharedZ)
-            : 0,
-      nCommission: round2(nComm),
-    };
-  } else {
-    const totalIncome = perApt.A.income + perApt.Z.income + perApt.N.income;
-    const totalExpenses = perApt.A.expenses + perApt.Z.expenses + perApt.N.expenses;
-    const totalNights = perApt.A.nights + perApt.Z.nights + perApt.N.nights;
-
-    kpi = {
-      income: round2(totalIncome),
-      expenses: round2(totalExpenses),
-      net: round2(totalIncome - totalExpenses),
-      nights: round2(totalNights),
-      sharedTotal: round2(sharedTotal),
-      nCommission: round2(nComm),
-    };
-  }
+  const kpi = buildKpiFromPerApt(perApt, aptFilter, sharedTotal, nComm);
 
   return {
     perApt: {
@@ -203,6 +212,7 @@ export function computePeriodReport(
 // =================== YEAR (kalendarska godina) ===================
 
 export function computeYearReport(rowsByMonth, opts) {
+  const rowsArr = Array.isArray(rowsByMonth) ? rowsByMonth : [];
   const sumPerApt = {
     A: { income: 0, nights: 0, expenses: 0, net: 0 },
     Z: { income: 0, nights: 0, expenses: 0, net: 0 },
@@ -211,7 +221,7 @@ export function computeYearReport(rowsByMonth, opts) {
 
   let sharedTotalYear = 0;
 
-  for (const m of rowsByMonth || []) {
+  for (const m of rowsArr) {
     const rep = computePeriodReport(
       {
         incomeMonthly: m.incomeMonthly,
@@ -222,7 +232,7 @@ export function computeYearReport(rowsByMonth, opts) {
       { aptFilter: "ALL", shareRule: opts.shareRule }
     );
 
-    for (const a of ["A", "Z", "N"]) {
+    for (const a of APT_LIST) {
       sumPerApt[a].income += rep.perApt[a].income || 0;
       sumPerApt[a].nights += rep.perApt[a].nights || 0;
       sumPerApt[a].expenses += rep.perApt[a].expenses || 0;
@@ -232,37 +242,7 @@ export function computeYearReport(rowsByMonth, opts) {
     sharedTotalYear += rep.sharedTotal || 0;
   }
 
-  let kpi;
-  if (opts.aptFilter === "A" || opts.aptFilter === "Z" || opts.aptFilter === "N") {
-    const r = sumPerApt[opts.aptFilter];
-    kpi = {
-      income: round2(r.income),
-      expenses: round2(r.expenses),
-      net: round2(r.net),
-      nights: round2(r.nights),
-      sharedTotal: round2(sharedTotalYear),
-      sharedAlloc:
-        opts.aptFilter === "A"
-          ? round2(sumPerApt.A.expenses)
-          : opts.aptFilter === "Z"
-            ? round2(sumPerApt.Z.expenses)
-            : 0,
-      nCommission: round2(sumPerApt.N.income),
-    };
-  } else {
-    const totalIncome = sumPerApt.A.income + sumPerApt.Z.income + sumPerApt.N.income;
-    const totalExpenses = sumPerApt.A.expenses + sumPerApt.Z.expenses + sumPerApt.N.expenses;
-    const totalNights = sumPerApt.A.nights + sumPerApt.Z.nights + sumPerApt.N.nights;
-
-    kpi = {
-      income: round2(totalIncome),
-      expenses: round2(totalExpenses),
-      net: round2(totalIncome - totalExpenses),
-      nights: round2(totalNights),
-      sharedTotal: round2(sharedTotalYear),
-      nCommission: round2(sumPerApt.N.income),
-    };
-  }
+  const kpi = buildKpiFromPerApt(sumPerApt, opts.aptFilter, sharedTotalYear, sumPerApt.N.income);
 
   return {
     perApt: {

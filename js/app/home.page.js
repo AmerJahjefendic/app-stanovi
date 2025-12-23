@@ -1,4 +1,4 @@
-// js/app/home.js
+// js/app/home.page.js
 import { loadCategoryAliases } from "../shared/mappingConfig.js";
 await loadCategoryAliases();
 
@@ -9,7 +9,6 @@ import {
   dbGetOneByIndex,
   dbPutOne,
   dbPutMany,
-  dbDeleteByIndex,
 } from "../db/db.js";
 
 import { keyFromPeriod, periodKeyToYM } from "../shared/utils.js";
@@ -17,7 +16,6 @@ import { importTroskovnikXlsx } from "../shared/importXlsx.js";
 import { periodLabel } from "../shared/parseFilename.js";
 import { computePeriodReport, computeYearReport, computeRangeReport } from "../reports/metrics.service.js";
 import { APARTMENTS, APT_LIST } from "../shared/constants.js";
-import { printToPdf } from "../shared/pdf.js";
 import {
   renderKPIs,
   renderIncomeTable,
@@ -29,8 +27,11 @@ import {
   withLoading,
 } from "../shared/ui.js";
 
+import { setPickerLabel } from "./home.ui.js";
+import { loadPeriodData } from "./home.data.js";
+import { attachEvents } from "./home.events.js";
+
 const els = {
-  // range buttons + popovers
   fromBtn: document.getElementById("fromPeriodBtn"),
   toBtn: document.getElementById("toPeriodBtn"),
   fromPop: document.getElementById("fromCalPop"),
@@ -38,21 +39,17 @@ const els = {
   btnShowRange: document.getElementById("btnShowRange"),
   btnClearRange: document.getElementById("btnClearRange"),
 
-  // sidebar calendar
   periodList: document.getElementById("periodList"),
 
-  // topbar actions
   btnBackup: document.getElementById("btnBackup"),
   backupInput: document.getElementById("backupInput"),
   fileInput: document.getElementById("fileInput"),
   btnPrint: document.getElementById("btnPrint"),
 
-  // filters + status
   status: document.getElementById("status"),
   aptFilter: document.getElementById("aptFilter"),
   shareRule: document.getElementById("shareRule"),
 
-  // KPI cards + tables
   kpiIncome: document.getElementById("kpiIncome"),
   kpiExpenses: document.getElementById("kpiExpenses"),
   kpiNet: document.getElementById("kpiNet"),
@@ -65,89 +62,43 @@ const els = {
 function loadSettings() {
   const sr = localStorage.getItem("shareRule");
   if (sr) state.shareRule = sr;
-
-  // sync UI
   if (els.shareRule) els.shareRule.value = state.shareRule;
-}
-
-// ----------------- helpers -----------------
-function setPickerLabel(btn, key) {
-  if (!btn) return;
-  btn.textContent = key ? periodLabel(periodKeyToYM(key)) : "—";
-}
-
-function hidePops() {
-  els.fromPop?.classList.add("is-hidden");
-  els.toPop?.classList.add("is-hidden");
-}
-
-function showPop(which) {
-  hidePops();
-  if (which === "FROM") els.fromPop?.classList.remove("is-hidden");
-  if (which === "TO") els.toPop?.classList.remove("is-hidden");
 }
 
 function makeKeyRange(fromKey, toKey) {
   if (!fromKey || !toKey) return [];
-
-  // ensure order
   let a = fromKey, b = toKey;
   if (a > b) [a, b] = [b, a];
-
   let { year: y1, month: m1 } = periodKeyToYM(a);
   let { year: y2, month: m2 } = periodKeyToYM(b);
-
   const out = [];
   let y = y1, m = m1;
-
   while (y < y2 || (y === y2 && m <= m2)) {
     out.push(keyFromPeriod(y, m));
     m++;
     if (m === 13) { m = 1; y++; }
   }
-
   return out;
 }
 
-async function loadPeriodData(year, month) {
-  const incomeMonthly = await dbGetByIndex("income_monthly", "by_period", [year, month]);
-  const incomeItems = await dbGetByIndex("income_items", "by_period", [year, month]).catch(() => []);
-  const expenses = await dbGetByIndex("expenses", "by_period", [year, month]);
-  const nCommission = await dbGetOneByIndex("n_commission", "by_period", [year, month]);
-  return { year, month, incomeMonthly, incomeItems, expenses, nCommission };
-}
-
-async function deletePeriod(year, month) {
-  await dbDeleteByIndex("imports", "by_period", [year, month]);
-  await dbDeleteByIndex("income_monthly", "by_period", [year, month]);
-  await dbDeleteByIndex("income_items", "by_period", [year, month]).catch(() => {});
-  await dbDeleteByIndex("expenses", "by_period", [year, month]);
-  await dbDeleteByIndex("n_commission", "by_period", [year, month]);
-}
-
-// ----------------- calendar render (main + range popovers) -----------------
 async function refreshPeriodCalendar() {
   const imports = await dbGetAll("imports");
   imports.sort((a, b) => a.year - b.year || a.month - b.month);
 
   const fallbackYear = new Date().getFullYear();
 
-  // default calendar year = year of last import
   if (!state.selectedCalendarYear) {
     state.selectedCalendarYear = imports.length ? imports[imports.length - 1].year : fallbackYear;
   }
 
-  // default MONTH selection (only if not in YEAR/RANGE)
   if (!state.selectedPeriodKey && !state.isYearView && !state.isRangeView && imports.length) {
     const last = imports[imports.length - 1];
     state.selectedPeriodKey = keyFromPeriod(last.year, last.month);
   }
 
-  // init range popup years
   if (!state.rangeFromYear) state.rangeFromYear = state.selectedCalendarYear;
   if (!state.rangeToYear) state.rangeToYear = state.selectedCalendarYear;
 
-  // RANGE popover calendars
   const fromMonths = new Set(imports.filter(i => i.year === state.rangeFromYear).map(i => i.month));
   renderYearCalendar(els.fromPop, {
     year: state.rangeFromYear,
@@ -164,11 +115,9 @@ async function refreshPeriodCalendar() {
     isYearView: false,
   });
 
-  // labels on range buttons
   setPickerLabel(els.fromBtn, state.fromPeriodKey);
   setPickerLabel(els.toBtn, state.toPeriodKey);
 
-  // MAIN sidebar calendar
   const monthsSet = new Set(imports.filter(i => i.year === state.selectedCalendarYear).map(i => i.month));
   renderYearCalendar(els.periodList, {
     year: state.selectedCalendarYear,
@@ -180,7 +129,6 @@ async function refreshPeriodCalendar() {
   return imports;
 }
 
-// ----------------- main render -----------------
 async function render() {
   const imports = await refreshPeriodCalendar();
 
@@ -193,7 +141,6 @@ async function render() {
     return;
   }
 
-  // ---------- RANGE VIEW ----------
   if (state.isRangeView) {
     const keys = makeKeyRange(state.fromPeriodKey, state.toPeriodKey);
 
@@ -244,7 +191,6 @@ async function render() {
     return;
   }
 
-  // ---------- YEAR VIEW ----------
   if (state.isYearView) {
     const year = state.selectedCalendarYear || new Date().getFullYear();
     els.status.textContent = `Prikaz: Godina ${year} — Apartman: ${state.aptFilter}`;
@@ -270,9 +216,7 @@ async function render() {
     return;
   }
 
-  // ---------- MONTH VIEW ----------
   if (!state.selectedPeriodKey) {
-    // fallback: last import
     const last = imports[imports.length - 1];
     state.selectedCalendarYear = last.year;
     state.selectedPeriodKey = keyFromPeriod(last.year, last.month);
@@ -300,7 +244,6 @@ async function render() {
   renderNNote(els.nNote, data.nCommission);
 }
 
-// ----------------- import / backup / restore -----------------
 async function handleImport(file) {
   const buf = await file.arrayBuffer();
   const parsed = importTroskovnikXlsx(file, buf);
@@ -316,7 +259,11 @@ async function handleImport(file) {
       `Želiš li da PREPIŠEŠ postojeće podatke za ovaj mjesec?`
     );
     if (!ok) return;
-    await deletePeriod(parsed.period.year, parsed.period.month);
+    await dbDeleteByIndex("imports", "by_period", [parsed.period.year, parsed.period.month]);
+    await dbDeleteByIndex("income_monthly", "by_period", [parsed.period.year, parsed.period.month]);
+    await dbDeleteByIndex("income_items", "by_period", [parsed.period.year, parsed.period.month]).catch(() => {});
+    await dbDeleteByIndex("expenses", "by_period", [parsed.period.year, parsed.period.month]);
+    await dbDeleteByIndex("n_commission", "by_period", [parsed.period.year, parsed.period.month]);
   }
 
   await dbPutOne("imports", parsed.importRecord);
@@ -325,13 +272,11 @@ async function handleImport(file) {
   await dbPutMany("expenses", parsed.expenses);
   await dbPutOne("n_commission", parsed.nCommission);
 
-  // after import -> MONTH view for that period
   state.isRangeView = false;
   state.isYearView = false;
   state.selectedCalendarYear = parsed.period.year;
   state.selectedPeriodKey = keyFromPeriod(parsed.period.year, parsed.period.month);
 
-  // set range defaults if empty
   if (!state.fromPeriodKey) state.fromPeriodKey = state.selectedPeriodKey;
   if (!state.toPeriodKey) state.toPeriodKey = state.selectedPeriodKey;
 
@@ -352,7 +297,6 @@ async function exportBackup() {
   const jsonText = JSON.stringify(data, null, 2);
   const blob = new Blob([jsonText], { type: "application/json" });
 
-  // Desktop Save As (File System Access API)
   if (window.showSaveFilePicker) {
     try {
       const handle = await window.showSaveFilePicker({
@@ -369,7 +313,6 @@ async function exportBackup() {
     }
   }
 
-  // Mobile share
   try {
     const file = new File([blob], filename, { type: "application/json" });
     if (navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
@@ -380,7 +323,6 @@ async function exportBackup() {
     console.warn("Share failed, fallback:", e);
   }
 
-  // Fallback download
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -403,16 +345,13 @@ async function restoreBackupFile(file) {
   const periods = new Set((data.imports || []).map(i => `${i.year}-${i.month}`));
   for (const key of periods) {
     const [y, m] = key.split("-");
-    await deletePeriod(Number(y), Number(m));
+    await dbPutMany("imports", (data.imports || []).filter(i => i.year === Number(y) && i.month === Number(m)));
+    await dbPutMany("income_monthly", (data.income_monthly || []).filter(i => i.year === Number(y) && i.month === Number(m)));
+    await dbPutMany("income_items", (data.income_items || []).filter(i => i.year === Number(y) && i.month === Number(m)));
+    await dbPutMany("expenses", (data.expenses || []).filter(i => i.year === Number(y) && i.month === Number(m)));
+    await dbPutMany("n_commission", (data.n_commission || []).filter(i => i.year === Number(y) && i.month === Number(m)));
   }
 
-  if (data.imports?.length) await dbPutMany("imports", data.imports);
-  if (data.income_monthly?.length) await dbPutMany("income_monthly", data.income_monthly);
-  if (data.income_items?.length) await dbPutMany("income_items", data.income_items);
-  if (data.expenses?.length) await dbPutMany("expenses", data.expenses);
-  if (data.n_commission?.length) await dbPutMany("n_commission", data.n_commission);
-
-  // After restore -> MONTH view on last import (if exists)
   const imports = await dbGetAll("imports");
   imports.sort((a, b) => a.year - b.year || a.month - b.month);
 
@@ -431,146 +370,6 @@ async function restoreBackupFile(file) {
   await render();
 }
 
-// ----------------- events -----------------
-function attachEvents() {
-  // RANGE popover open
-  els.fromBtn?.addEventListener("click", (e) => { e.stopPropagation(); showPop("FROM"); });
-  els.toBtn?.addEventListener("click", (e) => { e.stopPropagation(); showPop("TO"); });
-
-  // click outside closes
-  document.addEventListener("click", () => hidePops());
-  els.fromPop?.addEventListener("click", (e) => e.stopPropagation());
-  els.toPop?.addEventListener("click", (e) => e.stopPropagation());
-
-  // FROM pop: prev/next year + month pick
-  els.fromPop?.addEventListener("click", async (e) => {
-    const prev = e.target.closest("[data-cal='prev']");
-    const next = e.target.closest("[data-cal='next']");
-    if (prev || next) {
-      state.rangeFromYear += prev ? -1 : 1;
-      await render();
-      return;
-    }
-
-    const cell = e.target.closest(".monthCell");
-    if (!cell || cell.classList.contains("is-disabled")) return;
-
-    const m = Number(cell.dataset.month);
-    state.fromPeriodKey = keyFromPeriod(state.rangeFromYear, m);
-    setPickerLabel(els.fromBtn, state.fromPeriodKey);
-    hidePops();
-  });
-
-  // TO pop: prev/next year + month pick
-  els.toPop?.addEventListener("click", async (e) => {
-    const prev = e.target.closest("[data-cal='prev']");
-    const next = e.target.closest("[data-cal='next']");
-    if (prev || next) {
-      state.rangeToYear += prev ? -1 : 1;
-      await render();
-      return;
-    }
-
-    const cell = e.target.closest(".monthCell");
-    if (!cell || cell.classList.contains("is-disabled")) return;
-
-    const m = Number(cell.dataset.month);
-    state.toPeriodKey = keyFromPeriod(state.rangeToYear, m);
-    setPickerLabel(els.toBtn, state.toPeriodKey);
-    hidePops();
-  });
-
-  // RANGE actions
-  els.btnShowRange?.addEventListener("click", async () => {
-    state.isRangeView = true;
-    state.isYearView = false;
-    state.selectedPeriodKey = null;
-    await render();
-  });
-
-  els.btnClearRange?.addEventListener("click", async () => {
-    state.isRangeView = false;
-
-    // back to last imported month
-    const imports = await dbGetAll("imports");
-    imports.sort((a, b) => a.year - b.year || a.month - b.month);
-    const last = imports[imports.length - 1];
-    if (last) {
-      state.selectedCalendarYear = last.year;
-      state.selectedPeriodKey = keyFromPeriod(last.year, last.month);
-    }
-    await render();
-  });
-
-  // Topbar backup/export
-  els.btnBackup?.addEventListener("click", async () => {
-    try { await exportBackup(); }
-    catch (e) { console.error(e); alert(e.message || "Backup greška"); }
-  });
-
-  // Restore file input
-  els.backupInput?.addEventListener("change", async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try { await restoreBackupFile(file); }
-    catch (err) { console.error(err); alert(err.message || "Restore greška"); }
-    finally { els.backupInput.value = ""; }
-  });
-
-  // Import XLSX input
-  els.fileInput?.addEventListener("change", async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try { await handleImport(file); }
-    catch (err) { console.error(err); alert(err.message || "Greška pri importu."); }
-    finally { els.fileInput.value = ""; }
-  });
-
-  // Filters
-  els.aptFilter?.addEventListener("change", async () => {
-    state.aptFilter = els.aptFilter.value;
-    await render();
-  });
-
-  els.shareRule?.addEventListener("change", async () => {
-    state.shareRule = els.shareRule.value;
-    localStorage.setItem("shareRule", state.shareRule);
-    await render();
-  });
-
-  // Sidebar calendar click
-  els.periodList?.addEventListener("click", async (e) => {
-    // click year toggles YEAR/MONTH
-    const yearClick = e.target.closest("[data-cal='year']");
-    if (yearClick) {
-      state.isRangeView = false;
-      state.isYearView = !state.isYearView;
-      if (state.isYearView) state.selectedPeriodKey = null;
-      await render();
-      return;
-    }
-
-    // arrows change calendar year
-    const prev = e.target.closest("[data-cal='prev']");
-    const next = e.target.closest("[data-cal='next']");
-    if (prev) { state.selectedCalendarYear--; await render(); return; }
-    if (next) { state.selectedCalendarYear++; await render(); return; }
-
-    // month click -> MONTH view
-    const cell = e.target.closest(".monthCell");
-    if (!cell || cell.classList.contains("is-disabled")) return;
-
-    const month = Number(cell.dataset.month);
-    state.isRangeView = false;
-    state.isYearView = false;
-    state.selectedPeriodKey = keyFromPeriod(state.selectedCalendarYear, month);
-    await render();
-  });
-
-  // Print
-  els.btnPrint?.addEventListener("click", () => printToPdf());
-}
-
-attachEvents();
+attachEvents(els, { render, handleImport, exportBackup, restoreBackupFile });
 loadSettings();
 withLoading(async () => { await render(); });

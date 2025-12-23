@@ -9,6 +9,12 @@ export function periodKeyToYM(key) {
   return { year: y, month: m };
 }
 
+// Standardni helper za sigurno parsiranje datuma
+export function safeDate(x) {
+  const d = new Date(x);
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
 export function fmtEUR(x, options = {}) {
   if (options.dashIfNull && (x === null || x === undefined)) return "—";
   return new Intl.NumberFormat("bs-BA", { style: "currency", currency: "EUR" }).format(Number(x || 0));

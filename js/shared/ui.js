@@ -1,5 +1,6 @@
 // js/shared/ui.js
 import { fmtEUR, fmtNum } from "./utils.js";
+import { APARTMENTS, APT_LIST } from "./constants.js";
 
 export function renderPeriodList(root, periods, selectedKey) {
   root.innerHTML = "";
@@ -32,7 +33,7 @@ export function renderKPIs({ income, expenses, net, nights }, els) {
 }
 
 export function renderIncomeTable(root, perApt, aptFilter) {
-  const rows = (aptFilter === "ALL") ? ["A", "Z", "N"] : [aptFilter];
+  const rows = (aptFilter === "ALL") ? APT_LIST : [aptFilter];
   let html = `<table><thead><tr><th>Apartman</th><th class="right">Prihod (EUR)</th><th class="right">Noćenja</th></tr></thead><tbody>`;
   for (const a of rows) {
     html += `<tr><td><b>${a}</b></td><td class="right">${fmtEUR(perApt[a].income, { dashIfNull: true })}</td><td class="right">${fmtNum(perApt[a].nights, { dashIfNull: true })}</td></tr>`;
@@ -44,7 +45,7 @@ export function renderIncomeTable(root, perApt, aptFilter) {
 export function renderExpenseTable(root, report, aptFilter) {
   const { perApt, sharedTotal, sharedA, sharedZ, nTotal } = report;
 
-  if (aptFilter === "A") {
+  if (aptFilter === APARTMENTS.A) {
     root.innerHTML = `
       <table>
         <thead><tr><th>Stavka</th><th class="right">EUR</th></tr></thead>
@@ -55,7 +56,7 @@ export function renderExpenseTable(root, report, aptFilter) {
       </table>`;
     return;
   }
-  if (aptFilter === "Z") {
+  if (aptFilter === APARTMENTS.Z) {
     root.innerHTML = `
       <table>
         <thead><tr><th>Stavka</th><th class="right">EUR</th></tr></thead>
@@ -66,7 +67,7 @@ export function renderExpenseTable(root, report, aptFilter) {
       </table>`;
     return;
   }
-  if (aptFilter === "N") {
+  if (aptFilter === APARTMENTS.N) {
     root.innerHTML = `
       <table>
         <thead><tr><th>Stavka</th><th class="right">EUR</th></tr></thead>
@@ -151,6 +152,51 @@ export function renderYearCalendar(
   const yearEl = root.querySelector("[data-cal='year']");
   if (yearEl) {
     yearEl.classList.toggle("is-active", isYearView);
+  }
+}
+
+// ===== Status / Error helpers =====
+function resolveStatusEl() {
+  return (
+    document.getElementById("status") ||
+    document.getElementById("incStatus") ||
+    document.getElementById("expStatus")
+  );
+}
+
+export function setLoading(isLoading, msg = "Učitavam…") {
+  const el = resolveStatusEl();
+  if (!el) return;
+  if (isLoading) {
+    el.textContent = msg;
+    el.classList.remove("is-error");
+  } else {
+    // keep last status empty when not loading
+    if (el.textContent === msg) el.textContent = "";
+  }
+}
+
+export function showError(error) {
+  const el = resolveStatusEl();
+  const msg = (error && error.message) ? error.message : "Dogodila se greška.";
+  if (el) {
+    el.textContent = msg;
+    el.classList.add("is-error");
+  } else {
+    // fallback if no status element on page
+    alert(msg);
+  }
+}
+
+export async function withLoading(fn, msg = "Učitavam…") {
+  setLoading(true, msg);
+  try {
+    return await fn();
+  } catch (e) {
+    showError(e);
+    throw e;
+  } finally {
+    setLoading(false, msg);
   }
 }
 

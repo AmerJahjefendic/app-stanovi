@@ -56,13 +56,20 @@ function openDB() {
   });
 }
 
+// Cached DB connection promise
+let _dbPromise = null;
+export function getDB() {
+  if (!_dbPromise) _dbPromise = openDB();
+  return _dbPromise;
+}
+
 function tx(db, store, mode = "readonly") {
   return db.transaction(store, mode).objectStore(store);
 }
 
 // ================== BASIC CRUD ==================
 export async function dbPutMany(storeName, items) {
-  const db = await openDB();
+  const db = await getDB();
   return new Promise((resolve, reject) => {
     const t = db.transaction(storeName, "readwrite");
     const store = t.objectStore(storeName);
@@ -73,7 +80,7 @@ export async function dbPutMany(storeName, items) {
 }
 
 export async function dbPutOne(storeName, item) {
-  const db = await openDB();
+  const db = await getDB();
   return new Promise((resolve, reject) => {
     const t = db.transaction(storeName, "readwrite");
     t.objectStore(storeName).put(item);
@@ -83,7 +90,7 @@ export async function dbPutOne(storeName, item) {
 }
 
 export async function dbGetAll(storeName) {
-  const db = await openDB();
+  const db = await getDB();
   return new Promise((resolve, reject) => {
     const req = tx(db, storeName).getAll();
     req.onsuccess = () => resolve(req.result || []);
@@ -92,7 +99,7 @@ export async function dbGetAll(storeName) {
 }
 
 export async function dbGetByIndex(storeName, indexName, key) {
-  const db = await openDB();
+  const db = await getDB();
   return new Promise((resolve, reject) => {
     const store = tx(db, storeName);
     const req = store.index(indexName).getAll(key);
@@ -102,7 +109,7 @@ export async function dbGetByIndex(storeName, indexName, key) {
 }
 
 export async function dbGetOneByIndex(storeName, indexName, key) {
-  const db = await openDB();
+  const db = await getDB();
   return new Promise((resolve, reject) => {
     const store = tx(db, storeName);
     const req = store.index(indexName).get(key);
@@ -112,7 +119,7 @@ export async function dbGetOneByIndex(storeName, indexName, key) {
 }
 
 export async function dbDeleteByIndex(storeName, indexName, key) {
-  const db = await openDB();
+  const db = await getDB();
 
   return new Promise((resolve, reject) => {
     const t = db.transaction(storeName, "readwrite");
@@ -134,7 +141,7 @@ export async function dbDeleteByIndex(storeName, indexName, key) {
 }
 
 export async function dbDelete(storeName, key) {
-  const db = await openDB();
+  const db = await getDB();
   return new Promise((resolve, reject) => {
     const t = db.transaction(storeName, "readwrite");
     t.objectStore(storeName).delete(key);
@@ -144,7 +151,7 @@ export async function dbDelete(storeName, key) {
 }
 
 export async function dbGetOne(storeName, key) {
-  const db = await openDB();
+  const db = await getDB();
   return new Promise((resolve, reject) => {
     const req = tx(db, storeName).get(key);
     req.onsuccess = () => resolve(req.result || null);

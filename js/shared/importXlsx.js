@@ -2,6 +2,7 @@
 import { makeId } from "../db/db.js";
 import { parsePeriodFromFilename } from "./parseFilename.js";
 import { mapExpenseCategory } from "./mappingConfig.js";
+import { debug } from "./log.js";
 
 const XLSX = window.XLSX;
 
@@ -329,7 +330,7 @@ export function importTroskovnikXlsx(file, arrayBuffer) {
   }
 
   const wb = XLSX.read(arrayBuffer, { type: "array" });
-  console.log("SheetNames:", wb.SheetNames);
+  debug("SheetNames:", wb.SheetNames);
 
   const wsIncome = findSheet(wb, "Tabela priliva");
   const wsCosts = findSheet(wb, "Tabela troskova");

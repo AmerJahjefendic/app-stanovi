@@ -1,7 +1,8 @@
 // js/income/income.page.js
 import { dbGetAll, dbGetOneByIndex, dbPutOne, makeId } from "../db/db.js";
-import { keyFromPeriod, periodKeyToYM } from "../shared/utils.js";
-import { renderYearCalendar } from "../shared/ui.js";
+import { keyFromPeriod, periodKeyToYM, safeDate } from "../shared/utils.js";
+import { debug } from "../shared/log.js";
+import { renderYearCalendar, setLoading, showError, withLoading } from "../shared/ui.js";
 import { periodLabel } from "../shared/parseFilename.js";
 import {
     renderIncomeSummary,
@@ -46,9 +47,9 @@ const state = {
 
 function nightsFromDates(checkin, checkout) {
     if (!checkin || !checkout) return 0;
-    const a = new Date(checkin);
-    const b = new Date(checkout);
-    if (!Number.isFinite(a.getTime()) || !Number.isFinite(b.getTime())) return 0;
+    const a = safeDate(checkin);
+    const b = safeDate(checkout);
+    if (!a || !b) return 0;
 
     const ms = b.getTime() - a.getTime();
     const n = Math.round(ms / (1000 * 60 * 60 * 24));
@@ -58,8 +59,8 @@ function nightsFromDates(checkin, checkout) {
 function periodFromInputsOrSelected(checkinStr) {
     // 1) Ako imamo checkin → uzmi year/month iz checkin datuma
     if (checkinStr) {
-        const d = new Date(checkinStr);
-        if (Number.isFinite(d.getTime())) {
+        const d = safeDate(checkinStr);
+        if (d) {
             return { year: d.getFullYear(), month: d.getMonth() + 1 };
         }
     }
@@ -150,7 +151,7 @@ async function upsertNCommission(year, month, addedGross) {
 }
 
 async function handleAddIncomeItem() {
-    console.log("CLICK add income item");
+    debug("CLICK add income item");
 
     const apartment = els.incAddApt?.value || "A";
     const amount = Number(els.incAddAmount?.value || 0);
@@ -180,9 +181,9 @@ async function handleAddIncomeItem() {
         nights = Number.isFinite(nn) ? Math.max(0, Math.round(nn)) : 0;
     } else {
         if (checkin && checkout) {
-            const a = new Date(checkin);
-            const b = new Date(checkout);
-            if (Number.isFinite(a.getTime()) && Number.isFinite(b.getTime()) && b.getTime() <= a.getTime()) {
+            const a = safeDate(checkin);
+            const b = safeDate(checkout);
+            if (a && b && b.getTime() <= a.getTime()) {
                 alert("Check-out mora biti poslije check-in datuma.");
                 return;
             }
@@ -421,7 +422,7 @@ function attach() {
 
     els.incApt?.addEventListener("change", async () => {
         state.apt = els.incApt.value;
-        await render();
+        await withLoading(async () => { await render(); });
     });
 
     els.calendar?.addEventListener("click", async (e) => {
@@ -447,7 +448,7 @@ function attach() {
                 }
             }
 
-            await render();
+            await withLoading(async () => { await render(); });
             return;
         }
 
@@ -474,7 +475,7 @@ function attach() {
                 }
             }
 
-            await render();
+            await withLoading(async () => { await render(); });
             return;
         }
 
@@ -485,7 +486,7 @@ function attach() {
         const m = Number(cell.dataset.month);
         state.isYearView = false;
         state.selectedPeriodKey = keyFromPeriod(state.selectedCalendarYear, m);
-        await render();
+        await withLoading(async () => { await render(); });
     });
 
     els.btnOpenModal?.addEventListener("click", openModal);
@@ -505,4 +506,4 @@ function attach() {
 }
 
 attach();
-render();
+withLoading(async () => { await render(); });

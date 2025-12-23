@@ -1,6 +1,6 @@
 // js/expenses/expenses.page.js
-import { keyFromPeriod, periodKeyToYM } from "../shared/utils.js";
-import { renderYearCalendar } from "../shared/ui.js";
+import { keyFromPeriod, periodKeyToYM, safeDate } from "../shared/utils.js";
+import { renderYearCalendar, setLoading, showError, withLoading } from "../shared/ui.js";
 import { dbGetAll, dbPutCategoryAlias, dbPutOne, makeId } from "../db/db.js";
 import { periodLabel } from "../shared/parseFilename.js";
 import { loadCategoryAliases, mapExpenseCategory } from "../shared/mappingConfig.js";
@@ -10,6 +10,8 @@ import {
     renderExpensesList,
     renderExpenseFilters,
 } from "./expenses.ui.js";
+import { APARTMENTS, SHARE_RULE, SCOPE, FX } from "../shared/constants.js";
+const CAT_KEY = "appstanovi_expense_categories";
 
 const els = {
     calendar: document.getElementById("expCalendar"),
@@ -75,14 +77,38 @@ function getShareRule() {
         localStorage.getItem("shareRule") ||
         localStorage.getItem("appstanovi_shareRule");
 
-    if (direct === "INCOME" || direct === "NIGHTS") return direct;
-    return "NIGHTS";
+    if (direct === SHARE_RULE.INCOME || direct === SHARE_RULE.NIGHTS) return direct;
+    return SHARE_RULE.NIGHTS;
 }
 
+/**
+ * Računa broj noćenja na osnovu checkin i checkout datuma
+ * @param {string} checkin - Datum prijave (ISO format ili bilo koji validan datum string)
+ * @param {string} checkout - Datum odjave (ISO format ili bilo koji validan datum string)
+ * @returns {number} Broj noćenja (0 ako su datumi nevalidni ili checkout <= checkin)
+ */
+function nightsFromDates(checkin, checkout) {
+    if (!checkin || !checkout) return 0;
+    const a = safeDate(checkin);
+    const b = safeDate(checkout);
+    if (!a || !b) return 0;
+    const n = Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+    return n > 0 ? n : 0;
+}
+
+/**
+ * Kreira godišnju seriju troškova po mjesecima (za year breakdown tabelu)
+ * @param {Array<Object>} expenses - Niz svih troškova
+ * @param {number} year - Godina za koju se pravi serija
+ * @param {string} category - Filter kategorije ("ALL" ili naziv kategorije)
+ * @param {string} apt - Filter apartmana ("ALL", "A", "Z", "N")
+ * @returns {Array<{month: number, eur: number}>} Niz od 12 mjeseci sa sumama u EUR
+ */
 function buildYearSeries(expenses, year, category, apt) {
+    const arr = Array.isArray(expenses) ? expenses : [];
     const out = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, eur: 0 }));
 
-    for (const e of expenses) {
+    for (const e of arr) {
         if (e.year !== year) continue;
         if (apt !== "ALL" && e.apartment !== apt) continue;
         if (category !== "ALL" && e.category !== category) continue;
@@ -92,48 +118,113 @@ function buildYearSeries(expenses, year, category, apt) {
     return out;
 }
 
-function buildIncomeMap(incomeMonthlyRows) {
-    const map = new Map();
-    for (const r of incomeMonthlyRows) {
-        if (r.apartment !== "A" && r.apartment !== "Z") continue;
 
-        const key = periodKey(r.year, r.month);
+/**
+ * Kreira mapu prihoda i noćenja za A/Z apartmane po periodima (za dijeljenje shared troškova)
+ * Prioritet: income_items > income_monthly
+ * @param {Array<Object>} incomeMonthlyRows - Mjesečni prihodi iz income_monthly tabele
+ * @param {Array<Object>} incomeItems - Detaljne stavke prihoda iz income_items tabele
+ * @returns {Map<string, {A: {income: number, nights: number}, Z: {income: number, nights: number}}>} 
+ *          Mapa gdje je ključ "YYYY-MM", vrijednost objekti sa podacima za A i Z apartmane
+ */
+function buildIncomeMap(incomeMonthlyRows, incomeItems) {
+    const map = new Map();
+
+    // Prvo uzimamo income_items ako postoje - imaju prioritet
+    for (const item of incomeItems || []) {
+        if (item.apartment !== APARTMENTS.A && item.apartment !== APARTMENTS.Z) continue;
+
+        const key = periodKey(item.year, item.month);
         if (!map.has(key)) {
             map.set(key, {
                 A: { income: 0, nights: 0 },
                 Z: { income: 0, nights: 0 },
             });
         }
+
+        const slot = map.get(key)[item.apartment];
+        const amount = Number(item.amount_eur || item.income_eur || 0);
+        slot.income += amount;
+
+        // Noćenja: prefer explicit nights, fallback na checkin/checkout
+        let n = 0;
+        if (item.nights != null && item.nights !== "") {
+            const nn = Number(item.nights);
+            n = Number.isFinite(nn) ? nn : 0;
+        } else {
+            n = nightsFromDates(item.checkin, item.checkout);
+        }
+        slot.nights += n;
+    }
+
+    // Ako income_items nije dostupan ili je prazan, fallback na income_monthly
+    for (const r of incomeMonthlyRows || []) {
+        if (r.apartment !== APARTMENTS.A && r.apartment !== APARTMENTS.Z) continue;
+
+        const key = periodKey(r.year, r.month);
+        
+        // Ako već postoje podaci iz income_items za ovaj period, preskačemo income_monthly
+        if (map.has(key)) {
+            const existing = map.get(key);
+            const hasItems = existing.A.income > 0 || existing.Z.income > 0 || 
+                           existing.A.nights > 0 || existing.Z.nights > 0;
+            if (hasItems) continue;
+        }
+
+        if (!map.has(key)) {
+            map.set(key, {
+                A: { income: 0, nights: 0 },
+                Z: { income: 0, nights: 0 },
+            });
+        }
+
         const slot = map.get(key)[r.apartment];
         slot.income += Number(r.income_eur || 0);
         slot.nights += Number(r.nights || 0);
     }
+
     return map;
 }
 
+/**
+ * Dijeli SHARED trošak između A i Z apartmana po odabranom pravilu (INCOME ili NIGHTS)
+ * @param {Object} exp - Trošak sa scope="SHARED"
+ * @param {{A: {income: number, nights: number}, Z: {income: number, nights: number}}} az - Podaci o prihodima/noćenjima za A/Z
+ * @param {string} shareRule - Pravilo dijeljenja: "INCOME" ili "NIGHTS"
+ * @returns {Array<Object>} Dva nova troška (za A i za Z) sa proporcionalnim iznosima
+ */
 function splitSharedExpense(exp, az, shareRule) {
-    const aBase = shareRule === "INCOME" ? az.A.income : az.A.nights;
-    const zBase = shareRule === "INCOME" ? az.Z.income : az.Z.nights;
+    const aBase = shareRule === SHARE_RULE.INCOME ? az.A.income : az.A.nights;
+    const zBase = shareRule === SHARE_RULE.INCOME ? az.Z.income : az.Z.nights;
     const denom = aBase + zBase;
 
     const ratioA = denom > 0 ? aBase / denom : 0.5;
     const ratioZ = 1 - ratioA;
 
     const amount = Number(exp.amount_eur || 0);
-    const base = { ...exp, scope: "SHARED_SPLIT", derived_from: exp.id };
+    const base = { ...exp, scope: SCOPE.SHARED_SPLIT, derived_from: exp.id };
 
     return [
-        { ...base, apartment: "A", amount_eur: amount * ratioA },
-        { ...base, apartment: "Z", amount_eur: amount * ratioZ },
+        { ...base, apartment: APARTMENTS.A, amount_eur: amount * ratioA },
+        { ...base, apartment: APARTMENTS.Z, amount_eur: amount * ratioZ },
     ];
 }
 
-function buildRenderableExpenses(rawExpenses, incomeMonthlyRows, shareRule) {
-    const incMap = buildIncomeMap(incomeMonthlyRows);
+/**
+ * Transformiše sirove troškove u prikazive troškove - dijeli SHARED troškove na A/Z
+ * @param {Array<Object>} rawExpenses - Sirovi troškovi iz baze
+ * @param {Array<Object>} incomeMonthlyRows - Mjesečni prihodi
+ * @param {Array<Object>} incomeItems - Detaljne stavke prihoda
+ * @param {string} shareRule - Pravilo dijeljenja: "INCOME" ili "NIGHTS"
+ * @returns {Array<Object>} Troškovi gdje su SHARED troškovi podijeljeni na dva reda (A i Z)
+ */
+function buildRenderableExpenses(rawExpenses, incomeMonthlyRows, incomeItems, shareRule) {
+    const incMap = buildIncomeMap(incomeMonthlyRows, incomeItems);
     const out = [];
+    const src = Array.isArray(rawExpenses) ? rawExpenses : [];
 
-    for (const e of rawExpenses) {
-        if (e.scope === "SHARED") {
+    for (const e of src) {
+        if (e.scope === SCOPE.SHARED) {
             const key = periodKey(e.year, e.month);
             const az = incMap.get(key) || { A: { income: 0, nights: 0 }, Z: { income: 0, nights: 0 } };
             out.push(...splitSharedExpense(e, az, shareRule));
@@ -144,39 +235,61 @@ function buildRenderableExpenses(rawExpenses, incomeMonthlyRows, shareRule) {
     return out;
 }
 
+/**
+ * Zaokružuje broj na 2 decimale
+ * @param {number|string} x - Broj za zaokruživanje
+ * @returns {number} Zaokružen broj na 2 decimale
+ */
 function round2(x) {
     return Math.round((Number(x || 0) + Number.EPSILON) * 100) / 100;
 }
 
 // FX: 1 EUR = 1.95583 BAM (default). Možeš kasnije staviti settings.
-const FX_KEY = "fxRateBamPerEur";
+const FX_KEY = FX.FX_KEY;
+/**
+ * Dohvaća konverzioni kurs BAM/EUR iz localStorage (default: 1.95583)
+ * @returns {number} Kurs BAM po 1 EUR
+ */
 function getFxRate() {
     const v = Number(localStorage.getItem(FX_KEY));
-    return Number.isFinite(v) && v > 0 ? v : 1.95583;
+    return Number.isFinite(v) && v > 0 ? v : FX.DEFAULT_EUR_TO_BAM;
 }
 
+/**
+ * Otvara modal za dodavanje novog troška
+ */
 function openModal() {
     els.expModal?.classList.remove("is-hidden");
     els.expModal?.setAttribute("aria-hidden", "false");
     setTimeout(() => els.expAddAmountBam?.focus(), 0);
 }
 
+/**
+ * Zatvara modal za dodavanje novog troška
+ */
 function closeModal() {
     els.expModal?.classList.add("is-hidden");
     els.expModal?.setAttribute("aria-hidden", "true");
 }
 
+/**
+ * Sinhronizuje UI modala (prikazuje/sakriva apartman select na osnovu scope)
+ */
 function syncScopeUI() {
-    const sc = els.expAddScope?.value || "SHARED";
-    const showApt = sc === "APARTMENT";
+    const sc = els.expAddScope?.value || SCOPE.SHARED;
+    const showApt = sc === SCOPE.APARTMENT;
     els.expAptWrap?.classList.toggle("is-hidden", !showApt);
 }
 
-// period: iz date ako postoji, inače iz izabranog mjeseca (MONTH view)
+/**
+ * Određuje period (year/month) iz datuma ili trenutno odabranog mjeseca
+ * @param {string} dateStr - Datum string (ISO format)
+ * @returns {{year: number, month: number}|null} Objekat sa year/month ili null
+ */
 function periodFromDateOrSelected(dateStr) {
     if (dateStr) {
-        const d = new Date(dateStr);
-        if (Number.isFinite(d.getTime())) {
+        const d = safeDate(dateStr);
+        if (d) {
             return { year: d.getFullYear(), month: d.getMonth() + 1 };
         }
     }
@@ -184,6 +297,12 @@ function periodFromDateOrSelected(dateStr) {
     return null;
 }
 
+/**
+ * Osigurava da postoji import period (dodaje "MANUAL" import ako ne postoji)
+ * @param {number} year - Godina
+ * @param {number} month - Mjesec (1-12)
+ * @returns {Promise<void>}
+ */
 async function ensureImportPeriod(year, month) {
     const imports = await dbGetAll("imports");
     const exists = imports.some(i => i.year === year && i.month === month);
@@ -198,8 +317,10 @@ async function ensureImportPeriod(year, month) {
     });
 }
 
-// kategorije: čuvamo u localStorage da radi "Dodaj kategoriju"
-const CAT_KEY = "expenseCategories";
+/**
+ * Dohvaća listu kategorija iz localStorage
+ * @returns {Array<string>} Niz kategorija
+ */
 function getCategoriesLocal() {
     try {
         const arr = JSON.parse(localStorage.getItem(CAT_KEY) || "[]");
@@ -208,14 +329,26 @@ function getCategoriesLocal() {
         return [];
     }
 }
+/**
+ * Snima listu kategorija u localStorage
+ * @param {Array<string>} arr - Niz kategorija
+ */
 function saveCategoriesLocal(arr) {
     localStorage.setItem(CAT_KEY, JSON.stringify(arr));
 }
+/**
+ * Vraća unikatne elemente niza, sortirane alfabetski
+ * @param {Array<string>} arr - Niz stringova
+ * @returns {Array<string>} Sortirani niz unikatnih stringova
+ */
 function uniqueSorted(arr) {
     return [...new Set((arr || []).map(x => String(x || "").trim()).filter(Boolean))]
         .sort((a, b) => a.localeCompare(b, "bs"));
 }
 
+/**
+ * Handler za dodavanje nove kategorije putem prompt dijaloga
+ */
 function handleAddCategory() {
     const name = prompt("Unesi naziv nove kategorije:");
     if (!name) return;
@@ -231,19 +364,32 @@ function handleAddCategory() {
 }
 
 // ---------- data ----------
+/**
+ * Učitava sve troškove iz baze i transformiše ih za prikaz
+ * (dijeli SHARED troškove i normalizuje kategorije)
+ * @returns {Promise<Array<Object>>} Niz troškova spremnih za prikaz
+ */
 async function load() {
     const shareRule = getShareRule();
-    const [rawExpenses, incomeMonthly] = await Promise.all([
+    const [rawExpenses, incomeMonthly, incomeItems] = await Promise.all([
         dbGetAll("expenses"),
         dbGetAll("income_monthly"),
+        dbGetAll("income_items").catch(() => []),
     ]);
 
-    const expenses = buildRenderableExpenses(rawExpenses, incomeMonthly, shareRule);
+
+    const expenses = buildRenderableExpenses(rawExpenses, incomeMonthly, incomeItems, shareRule);
     return expenses.map((e) => ({ ...e, category: normCat(e) }));
 }
 
+/**
+ * Primjenjuje trenutne filtere (period, apartman, kategorija) na troškove
+ * @param {Array<Object>} expenses - Svi troškovi
+ * @returns {Array<Object>} Filtrirani troškovi
+ */
 function applyFilters(expenses) {
-    return expenses.filter((e) => {
+    const arr = Array.isArray(expenses) ? expenses : [];
+    return arr.filter((e) => {
         // PERIOD FILTER
         if (state.selectedPeriodKey) {
             // MONTH view
@@ -262,6 +408,10 @@ function applyFilters(expenses) {
     });
 }
 
+/**
+ * Glavna render funkcija - učitava podatke, primjenjuje filtere i ažurira UI
+ * @returns {Promise<void>}
+ */
 async function render() {
     const all = await load();
 
@@ -377,6 +527,11 @@ async function render() {
     renderExpensesList(els.list, filtered);
 }
 
+/**
+ * Handler za snimanje novog troška iz modala
+ * Validira unos, konvertuje BAM u EUR, i čuva u bazu
+ * @returns {Promise<void>}
+ */
 async function handleSaveExpense() {
     const amountBam = Number(els.expAddAmountBam?.value || 0);
     if (!Number.isFinite(amountBam) || amountBam <= 0) {
@@ -390,8 +545,8 @@ async function handleSaveExpense() {
         return;
     }
 
-    const scope = els.expAddScope?.value || "SHARED";
-    const apartment = scope === "APARTMENT" ? (els.expAddApt?.value || "A") : null;
+    const scope = els.expAddScope?.value || SCOPE.SHARED;
+    const apartment = scope === SCOPE.APARTMENT ? (els.expAddApt?.value || APARTMENTS.A) : null;
 
     const dateStr = els.expAddDate?.value || "";
     const period = periodFromDateOrSelected(dateStr);
@@ -439,6 +594,9 @@ async function handleSaveExpense() {
     }
 }
 
+/**
+ * Postavlja sve event listenere na UI elemente
+ */
 function attach() {
     els.listToggle?.addEventListener("click", async () => {
         state.listCollapsed = !state.listCollapsed;
@@ -448,12 +606,12 @@ function attach() {
 
     els.expApt?.addEventListener("change", async () => {
         state.apt = els.expApt.value;
-        await render();
+        await withLoading(async () => { await render(); });
     });
 
     els.expCat?.addEventListener("change", async () => {
         state.cat = els.expCat.value;
-        await render();
+        await withLoading(async () => { await render(); });
     });
 
     // MERGE: samo jednom!
@@ -481,7 +639,7 @@ function attach() {
         if (yearClick) {
             state.isYearView = true;
             state.selectedPeriodKey = null; // YEAR view (cijela godina)
-            await render();
+            await withLoading(async () => { await render(); });
             return;
         }
         const prev = e.target.closest("[data-cal='prev']");
@@ -503,7 +661,7 @@ function attach() {
                 state.selectedPeriodKey = null; // nema podataka u toj godini
             }
 
-            await render();
+            await withLoading(async () => { await render(); });
             return;
         }
 
@@ -514,7 +672,7 @@ function attach() {
         const m = Number(cell.dataset.month);
         state.isYearView = false;
         state.selectedPeriodKey = keyFromPeriod(state.selectedCalendarYear, m);
-        await render();
+        await withLoading(async () => { await render(); });
     });
 
     // Klik na kategoriju u tabeli -> toggle filter kategorije
@@ -539,34 +697,34 @@ function attach() {
     });
 
     // ===== MODAL events =====
-els.btnOpenExpenseModal?.addEventListener("click", () => {
-  syncScopeUI();
-  openModal();
-});
+    els.btnOpenExpenseModal?.addEventListener("click", () => {
+        syncScopeUI();
+        openModal();
+    });
 
-els.btnCloseExpenseModal?.addEventListener("click", closeModal);
-els.btnCancelExpense?.addEventListener("click", closeModal);
+    els.btnCloseExpenseModal?.addEventListener("click", closeModal);
+    els.btnCancelExpense?.addEventListener("click", closeModal);
 
-els.expModal?.addEventListener("click", (e) => {
-  if (e.target?.dataset?.close) closeModal();
-});
+    els.expModal?.addEventListener("click", (e) => {
+        if (e.target?.dataset?.close) closeModal();
+    });
 
-els.expAddScope?.addEventListener("change", syncScopeUI);
+    els.expAddScope?.addEventListener("change", syncScopeUI);
 
-els.btnAddCategory?.addEventListener("click", handleAddCategory);
+    els.btnAddCategory?.addEventListener("click", handleAddCategory);
 
-els.btnSaveExpense?.addEventListener("click", handleSaveExpense);
+    els.btnSaveExpense?.addEventListener("click", handleSaveExpense);
 
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && els.expModal && !els.expModal.classList.contains("is-hidden")) {
-    closeModal();
-  }
-});
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && els.expModal && !els.expModal.classList.contains("is-hidden")) {
+            closeModal();
+        }
+    });
 
 }
 
 (async () => {
     await loadCategoryAliases();
     attach();
-    render();
+    await withLoading(async () => { await render(); });
 })();
