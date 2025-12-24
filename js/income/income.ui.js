@@ -52,12 +52,14 @@ export function renderIncomeSummary(root, { sumsAZN, nBreakdown, total }) {
 }
 
 // ---------- ITEMS TABLE (taksativne stavke) ----------
+// ---------- ITEMS TABLE (taksativne stavke) ----------
 export function renderIncomeItemsTable(root, items) {
   if (!items || items.length === 0) {
     root.innerHTML = `<p class="note">Nema stavki za prikaz.</p>`;
     return;
   }
 
+  // sort: newest first
   const rows = [...items].sort((a, b) =>
     (b.year - a.year) ||
     (b.month - a.month) ||
@@ -82,31 +84,43 @@ export function renderIncomeItemsTable(root, items) {
       </thead>
       <tbody>
         ${rows.map(r => {
-          const platform = r.platform || "—";
-          const net = Number(r.amount_eur || 0) || 0;
+          const period = `${r.year}-${String(r.month).padStart(2, "0")}`;
 
-          const gross = (r.gross_eur != null && r.gross_eur !== "")
-            ? Number(r.gross_eur)
-            : (platform === "booking" ? null : net);
+          // NET je amount_eur (kod tebe je to "što ostaje nama" za N, i prihod za A/Z)
+          const net = Number(r.amount_eur ?? r.income_eur ?? 0) || 0;
 
-          const fee = (r.platform_fee_eur != null && r.platform_fee_eur !== "")
-            ? Number(r.platform_fee_eur)
-            : null;
+          // gross: koristimo reservation_gross_eur ako postoji (booking i N+airbnb), inače net
+          const gross = Number(r.reservation_gross_eur ?? r.gross_eur ?? net) || 0;
 
-          const nights = (r.nights != null && r.nights !== "")
-            ? Number(r.nights)
-            : 0;
+          // fee: booking_fee_eur koristimo i za Airbnb fee (opc 1 koju si izabrao)
+          const fee = Number(r.booking_fee_eur ?? 0) || 0;
+
+          const paid = !!r.paid;
+
+          // Ako nema r.id -> to je fallback/sumarno -> disable toggle
+          const canToggle = !!r.id;
 
           return `
             <tr>
-              <td>${r.year}-${String(r.month).padStart(2, "0")}</td>
+              <td>${period}</td>
               <td>${r.apartment || "—"}</td>
-              <td>${platform}</td>
-              <td class="right">${gross == null ? "—" : fmtEUR(gross)}</td>
-              <td class="right">${fee == null ? "—" : fmtEUR(fee)}</td>
+              <td>${r.platform || "—"}</td>
+              <td class="right">${fmtEUR(gross)}</td>
+              <td class="right">${fmtEUR(fee)}</td>
               <td class="right">${fmtEUR(net)}</td>
-              <td class="right">${fmtNum(nights)}</td>
-              <td class="right">${r.paid ? "DA" : "NE"}</td>
+              <td class="right">${fmtNum(r.nights)}</td>
+              <td>
+                <label style="display:flex; align-items:center; gap:8px;">
+                  <input
+                    type="checkbox"
+                    class="js-paid-toggle"
+                    data-id="${r.id || ""}"
+                    ${paid ? "checked" : ""}
+                    ${canToggle ? "" : "disabled"}
+                  />
+                  <span>${paid ? "DA" : "NE"}</span>
+                </label>
+              </td>
               <td>${r.note || r.source || ""}</td>
             </tr>
           `;

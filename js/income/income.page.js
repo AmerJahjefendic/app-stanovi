@@ -1,5 +1,5 @@
 // js/income/income.page.js
-import { dbGetAll, dbGetOneByIndex, dbPutOne, makeId } from "../db/db.js";
+import { dbGetAll, dbGetOne, dbGetOneByIndex, dbPutOne, makeId } from "../db/db.js";
 import { keyFromPeriod, periodKeyToYM, safeDate } from "../shared/utils.js";
 import { debug } from "../shared/log.js";
 import { renderYearCalendar, withLoading } from "../shared/ui.js";
@@ -572,6 +572,21 @@ function computeSums(filteredMonthly, filteredItems, nCommission) {
     return { sumsAZN, nBreakdown, total };
 }
 
+async function setIncomeItemPaid(id, paid) {
+    if (!id) return;
+
+    const row = await dbGetOne("income_items", id);
+    if (!row) {
+        alert("Ne mogu naći stavku u bazi (income_items).");
+        return;
+    }
+
+    row.paid = !!paid;
+    row.updated_at = new Date().toISOString();
+
+    await dbPutOne("income_items", row);
+}
+
 async function render() {
     const data = await load();
 
@@ -636,6 +651,24 @@ function attach() {
     els.btnToggleItems?.addEventListener("click", () => {
         const isHidden = els.itemsWrap.classList.toggle("is-collapsed");
         els.btnToggleItems.textContent = isHidden ? "Prikaži" : "Sakrij";
+    });
+
+    els.itemsTable?.addEventListener("change", async (e) => {
+        const cb = e.target.closest(".js-paid-toggle");
+        if (!cb) return;
+
+        const id = cb.dataset.id;
+        const paid = cb.checked;
+
+        try {
+            await setIncomeItemPaid(id, paid);
+            await withLoading(async () => { await render(); });
+        } catch (err) {
+            console.error(err);
+            alert(err?.message || "Greška pri snimanju statusa plaćanja.");
+            // vrati UI u prethodno stanje (sigurno)
+            cb.checked = !paid;
+        }
     });
 
     els.incApt?.addEventListener("change", async () => {
