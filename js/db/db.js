@@ -1,6 +1,6 @@
 // js/db.js
 const DB_NAME = "appstanovi_db";
-const DB_VER = 6;
+const DB_VER = 7;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -51,7 +51,22 @@ function openDB() {
       }
     };
 
-    req.onsuccess = () => resolve(req.result);
+    req.onblocked = () => {
+      console.warn("[db] Upgrade blocked. Zatvori druge AppStanovi tabove.");
+    };
+
+    req.onsuccess = () => {
+      const db = req.result;
+
+      // Ako druga stranica uradi upgrade DB-a, ova konekcija mora da se zatvori
+      db.onversionchange = () => {
+        try { db.close(); } catch {}
+        _dbPromise = null; // reset cache da se sljedeći poziv ponovo otvori
+        console.warn("[db] versionchange -> connection closed. Reload page / close other tabs.");
+      };
+
+      resolve(db);
+    };
     req.onerror = () => reject(req.error);
   });
 }
@@ -69,53 +84,146 @@ function tx(db, store, mode = "readonly") {
 
 // ================== BASIC CRUD ==================
 export async function dbPutMany(storeName, items) {
-  const db = await getDB();
-  return new Promise((resolve, reject) => {
-    const t = db.transaction(storeName, "readwrite");
-    const store = t.objectStore(storeName);
-    for (const it of items) store.put(it);
-    t.oncomplete = () => resolve(true);
-    t.onerror = () => reject(t.error);
-  });
+  let retries = 2;
+  while (retries >= 0) {
+    try {
+      const db = await getDB();
+      return new Promise((resolve, reject) => {
+        try {
+          const t = db.transaction(storeName, "readwrite");
+          const store = t.objectStore(storeName);
+          for (const it of items) store.put(it);
+          t.oncomplete = () => resolve(true);
+          t.onerror = () => reject(t.error);
+        } catch (err) {
+          reject(err);
+        }
+      });
+    } catch (err) {
+      console.warn(`DB error in dbPutMany (retries left: ${retries})`, err);
+      if (retries > 0) {
+        _dbPromise = null;
+        retries--;
+        // zadrži iste delay vrijednosti (100ms, 200ms) ali čitljiviji redoslijed
+        await new Promise(r => setTimeout(r, 100 * (2 - retries)));
+      } else {
+        throw err;
+      }
+    }
+  }
 }
 
 export async function dbPutOne(storeName, item) {
-  const db = await getDB();
-  return new Promise((resolve, reject) => {
-    const t = db.transaction(storeName, "readwrite");
-    t.objectStore(storeName).put(item);
-    t.oncomplete = () => resolve(true);
-    t.onerror = () => reject(t.error);
-  });
+  let retries = 2;
+  while (retries >= 0) {
+    try {
+      const db = await getDB();
+      return new Promise((resolve, reject) => {
+        try {
+          const t = db.transaction(storeName, "readwrite");
+          t.objectStore(storeName).put(item);
+          t.oncomplete = () => resolve(true);
+          t.onerror = () => reject(t.error);
+        } catch (err) {
+          reject(err);
+        }
+      });
+    } catch (err) {
+      console.warn(`DB error in dbPutOne (retries left: ${retries})`, err);
+      if (retries > 0) {
+        // Reset cache and retry
+        _dbPromise = null;
+        // Small delay before retry (same timing, clearer order)
+        retries--;
+        await new Promise(r => setTimeout(r, 100 * (2 - retries)));
+      } else {
+        throw err;
+      }
+    }
+  }
 }
 
 export async function dbGetAll(storeName) {
-  const db = await getDB();
-  return new Promise((resolve, reject) => {
-    const req = tx(db, storeName).getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  });
+  let retries = 2;
+  while (retries >= 0) {
+    try {
+      const db = await getDB();
+      return new Promise((resolve, reject) => {
+        try {
+          const req = tx(db, storeName).getAll();
+          req.onsuccess = () => resolve(req.result || []);
+          req.onerror = () => reject(req.error);
+        } catch (err) {
+          reject(err);
+        }
+      });
+    } catch (err) {
+      console.warn(`DB error in dbGetAll (retries left: ${retries})`, err);
+      if (retries > 0) {
+        _dbPromise = null;
+        retries--;
+        await new Promise(r => setTimeout(r, 100 * (2 - retries)));
+      } else {
+        throw err;
+      }
+    }
+  }
 }
 
 export async function dbGetByIndex(storeName, indexName, key) {
-  const db = await getDB();
-  return new Promise((resolve, reject) => {
-    const store = tx(db, storeName);
-    const req = store.index(indexName).getAll(key);
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  });
+  let retries = 2;
+  while (retries >= 0) {
+    try {
+      const db = await getDB();
+      return new Promise((resolve, reject) => {
+        try {
+          const store = tx(db, storeName);
+          const req = store.index(indexName).getAll(key);
+          req.onsuccess = () => resolve(req.result || []);
+          req.onerror = () => reject(req.error);
+        } catch (err) {
+          reject(err);
+        }
+      });
+    } catch (err) {
+      console.warn(`DB error in dbGetByIndex (retries left: ${retries})`, err);
+      if (retries > 0) {
+        _dbPromise = null;
+        retries--;
+        await new Promise(r => setTimeout(r, 100 * (2 - retries)));
+      } else {
+        throw err;
+      }
+    }
+  }
 }
 
 export async function dbGetOneByIndex(storeName, indexName, key) {
-  const db = await getDB();
-  return new Promise((resolve, reject) => {
-    const store = tx(db, storeName);
-    const req = store.index(indexName).get(key);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => reject(req.error);
-  });
+  let retries = 2;
+  while (retries >= 0) {
+    try {
+      const db = await getDB();
+      return new Promise((resolve, reject) => {
+        try {
+          const store = tx(db, storeName);
+          const req = store.index(indexName).get(key);
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => reject(req.error);
+        } catch (err) {
+          reject(err);
+        }
+      });
+    } catch (err) {
+      console.warn(`DB error in dbGetOneByIndex (retries left: ${retries})`, err);
+      if (retries > 0) {
+        _dbPromise = null;
+        retries--;
+        await new Promise(r => setTimeout(r, 100 * (2 - retries)));
+      } else {
+        throw err;
+      }
+    }
+  }
 }
 
 export async function dbDeleteByIndex(storeName, indexName, key) {

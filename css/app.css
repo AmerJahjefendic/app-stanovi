@@ -548,6 +548,9 @@ td.right {
   border-radius: 18px;
   box-shadow: 0 12px 40px rgba(0,0,0,.45);
   overflow: hidden;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .modalHeader, .modalFooter{
@@ -558,7 +561,13 @@ td.right {
 
 .modalFooter{ border-bottom:none; border-top: 1px solid rgba(255,255,255,.08); gap:10px; justify-content:flex-end; }
 
-.modalBody{ padding: 14px 16px; display:grid; gap:12px; }
+.modalBody{ 
+  padding: 14px 16px; 
+  display:grid; 
+  gap:12px;
+  overflow: auto;
+  max-height: calc(90vh - 120px);
+}
 .modalTitle{ font-weight: 800; font-size: 16px; }
 .modalSub{ opacity:.75; font-size: 12px; margin-top: 2px; }
 
