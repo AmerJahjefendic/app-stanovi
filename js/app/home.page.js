@@ -15,7 +15,7 @@ import { keyFromPeriod, periodKeyToYM } from "../shared/utils.js";
 import { importTroskovnikXlsx } from "../shared/importXlsx.js";
 import { periodLabel } from "../shared/parseFilename.js";
 import { computePeriodReport, computeYearReport, computeRangeReport } from "../reports/metrics.service.js";
-import { APARTMENTS, APT_LIST } from "../shared/constants.js";
+import { APARTMENTS, APT_LIST, LS_KEYS } from "../shared/constants.js";
 import {
   renderKPIs,
   renderIncomeTable,
@@ -26,6 +26,7 @@ import {
   showError,
   withLoading,
 } from "../shared/ui.js";
+import { getShareRule, setShareRule } from "../shared/settings.js";
 
 import { setPickerLabel } from "./home.ui.js";
 import { loadPeriodData } from "./home.data.js";
@@ -60,8 +61,7 @@ const els = {
 };
 
 function loadSettings() {
-  const sr = localStorage.getItem("shareRule");
-  if (sr) state.shareRule = sr;
+  state.shareRule = getShareRule();
   if (els.shareRule) els.shareRule.value = state.shareRule;
 }
 
@@ -372,4 +372,14 @@ async function restoreBackupFile(file) {
 
 attachEvents(els, { render, handleImport, exportBackup, restoreBackupFile });
 loadSettings();
+
+// Preslušaj promjene shareRule iz drugih tabova ili iz same stranice (synthetic event)
+window.addEventListener("storage", (e) => {
+  if (e.key === LS_KEYS.shareRule) {
+    state.shareRule = getShareRule();
+    if (els.shareRule) els.shareRule.value = state.shareRule;
+    render();
+  }
+});
+
 withLoading(async () => { await render(); });

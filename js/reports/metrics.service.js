@@ -134,10 +134,7 @@ export function computePeriodReport(
   let aShare = 0.5;
   let zShare = 0.5;
 
-  if (shareRule === SHARE_RULE.HALF) {
-    aShare = 0.5;
-    zShare = 0.5;
-  } else if (shareRule === SHARE_RULE.INCOME) {
+  if (shareRule === SHARE_RULE.INCOME) {
     const denom = A.income + Z.income;
     if (denom > 0) {
       aShare = A.income / denom;

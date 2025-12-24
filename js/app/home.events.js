@@ -4,6 +4,7 @@ import { showPop, hidePops, setPickerLabel } from "./home.ui.js";
 import { printToPdf } from "../shared/pdf.js";
 import { dbGetAll } from "../db/db.js";
 import { state } from "../shared/state.js";
+import { setShareRule } from "../shared/settings.js";
 
 export function attachEvents(els, handlers) {
   const { render, handleImport, exportBackup, restoreBackupFile } = handlers;
@@ -107,8 +108,9 @@ export function attachEvents(els, handlers) {
   });
 
   els.shareRule?.addEventListener("change", async () => {
-    state.shareRule = els.shareRule.value;
-    localStorage.setItem("shareRule", state.shareRule);
+    const val = els.shareRule.value;
+    setShareRule(val);
+    state.shareRule = val;
     await render();
   });
 

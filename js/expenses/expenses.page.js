@@ -10,7 +10,8 @@ import {
     renderExpensesList,
     renderExpenseFilters,
 } from "./expenses.ui.js";
-import { APARTMENTS, SHARE_RULE, SCOPE, FX } from "../shared/constants.js";
+import { APARTMENTS, SHARE_RULE, SCOPE, FX, LS_KEYS } from "../shared/constants.js";
+import { getShareRule } from "../shared/settings.js";
 const CAT_KEY = "appstanovi_expense_categories";
 
 const els = {
@@ -70,15 +71,6 @@ function normCat(exp) {
 
 function periodKey(y, m) {
     return `${y}-${String(m).padStart(2, "0")}`;
-}
-
-function getShareRule() {
-    const direct =
-        localStorage.getItem("shareRule") ||
-        localStorage.getItem("appstanovi_shareRule");
-
-    if (direct === SHARE_RULE.INCOME || direct === SHARE_RULE.NIGHTS) return direct;
-    return SHARE_RULE.NIGHTS;
 }
 
 /**
@@ -726,5 +718,14 @@ function attach() {
 (async () => {
     await loadCategoryAliases();
     attach();
+    
+    // Preslušaj promjene shareRule iz drugih tabova
+    window.addEventListener("storage", (e) => {
+        if (e.key === LS_KEYS.shareRule) {
+            render(); // ponovo izračunaj split SHARED stavki
+        }
+    });
+    
     await withLoading(async () => { await render(); });
 })();
+

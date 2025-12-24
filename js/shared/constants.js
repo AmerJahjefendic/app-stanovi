@@ -25,3 +25,6 @@ export const FX = {
   FX_KEY: "fxRateBamPerEur",
   DEFAULT_EUR_TO_BAM: 1.95583,
 };
+export const LS_KEYS = {
+  shareRule: "appstanovi_shareRule",
+};
