@@ -10,6 +10,8 @@ console.log("[income.page.js] loaded", new Date().toISOString());
 window.__incomeLoaded = true;
 
 const els = {
+    incPlatform: document.getElementById("incPlatform"),
+
     modal: document.getElementById("incomeModal"),
     btnOpenModal: document.getElementById("btnOpenIncomeModal"),
 
@@ -48,6 +50,7 @@ const els = {
 
 const state = {
     apt: "ALL",
+    platform: "ALL",
     selectedCalendarYear: null,
     selectedPeriodKey: null,
     isYearView: false,
@@ -475,10 +478,13 @@ async function load() {
     return { incomeMonthly, incomeItems, nCommission, imports };
 }
 
-function applyFilters(data, aptFilter) {
-    let filteredMonthly = data.incomeMonthly || [];
-    let filteredItems = data.incomeItems || [];
+function applyFilters(data, aptFilter, platformFilter) {
+    const { incomeMonthly, incomeItems } = data;
 
+    let filteredMonthly = incomeMonthly;
+    let filteredItems = incomeItems;
+
+    // PERIOD FILTER (isto kao sada)
     if (state.selectedPeriodKey) {
         const { year, month } = periodKeyToYM(state.selectedPeriodKey);
         filteredMonthly = filteredMonthly.filter(r => r.year === year && r.month === month);
@@ -488,9 +494,15 @@ function applyFilters(data, aptFilter) {
         filteredItems = filteredItems.filter(r => r.year === state.selectedCalendarYear);
     }
 
+    // APT FILTER
     if (aptFilter !== "ALL") {
         filteredMonthly = filteredMonthly.filter(r => r.apartment === aptFilter);
         filteredItems = filteredItems.filter(r => r.apartment === aptFilter);
+    }
+
+    // PLATFORM FILTER (samo na income_items jer monthly nema platformu)
+    if (platformFilter && platformFilter !== "ALL") {
+        filteredItems = filteredItems.filter(r => String(r.platform || "").toLowerCase() === platformFilter);
     }
 
     return { filteredMonthly, filteredItems };
@@ -614,7 +626,7 @@ async function render() {
         isYearView: state.isYearView,
     });
 
-    const { filteredMonthly, filteredItems } = applyFilters(data, state.apt);
+    const { filteredMonthly, filteredItems } = applyFilters(data, state.apt, state.platform);
     const { sumsAZN, nBreakdown, total } = computeSums(filteredMonthly, filteredItems, data.nCommission);
 
     const useItems = filteredItems.length > 0;
@@ -623,6 +635,9 @@ async function render() {
     if (state.selectedPeriodKey) {
         const { year, month } = periodKeyToYM(state.selectedPeriodKey);
         els.status.textContent = `Period: ${periodLabel({ year, month })} — Stavki: ${itemCount}`;
+        const pf = state.platform && state.platform !== "ALL" ? ` • Platforma: ${state.platform}` : "";
+        els.status.textContent += pf;
+
     } else {
         const y = state.selectedCalendarYear || new Date().getFullYear();
         els.status.textContent = `Godina: ${y} — Stavki: ${itemCount}`;
@@ -645,6 +660,11 @@ async function render() {
 // ---------- attach ----------
 
 function attach() {
+    els.incPlatform?.addEventListener("change", async () => {
+        state.platform = els.incPlatform.value;
+        await withLoading(async () => { await render(); });
+    });
+
     if (!els.datesWrap) console.warn("Missing #datesWrap in HTML");
     if (!els.nightsWrap) console.warn("Missing #nightsWrap in HTML");
 
@@ -654,20 +674,25 @@ function attach() {
     });
 
     els.itemsTable?.addEventListener("change", async (e) => {
-        const cb = e.target.closest(".js-paid-toggle");
+        const cb = e.target.closest(".paidToggle");
         if (!cb) return;
 
         const id = cb.dataset.id;
         const paid = cb.checked;
 
         try {
-            await setIncomeItemPaid(id, paid);
-            await withLoading(async () => { await render(); });
+            // učitaj postojeći item
+            const item = await dbGetOne("income_items", id);
+            if (!item) return;
+
+            item.paid = paid;
+            item.updated_at = new Date().toISOString();
+
+            await dbPutOne("income_items", item);
+            await render();
         } catch (err) {
             console.error(err);
-            alert(err?.message || "Greška pri snimanju statusa plaćanja.");
-            // vrati UI u prethodno stanje (sigurno)
-            cb.checked = !paid;
+            alert("Greška pri izmjeni 'plaćeno'.");
         }
     });
 

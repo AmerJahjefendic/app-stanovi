@@ -505,39 +505,11 @@ td.right {
 .calPop .monthCell.is-imported{ background: rgba(0,200,120,.12); border:1px solid rgba(0,200,120,.25); }
 .calPop .monthCell.is-missing { background: rgba(220,60,60,.10);  border:1px solid rgba(220,60,60,.25); }
 
-.modal { position: fixed; inset: 0; z-index: 9999; }
-.modalBackdrop {
-  position: absolute; inset: 0;
-  background: rgba(0,0,0,.55);
-}
-.modalCard{
-  position: relative;
-  width: min(520px, calc(100% - 24px));
-  margin: 72px auto 0;
-  background: rgba(10, 20, 35, .98);
-  border: 1px solid rgba(255,255,255,.12);
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0,0,0,.45);
-  overflow: hidden;
-}
-.modalHeader{
-  display:flex; align-items:center; justify-content:space-between;
-  padding: 12px 14px;
-  border-bottom: 1px solid rgba(255,255,255,.10);
-}
-.modalTitle{ font-weight: 700; }
-.modalBody{ padding: 14px; display: grid; gap: 10px; }
-.modalFooter{
-  padding: 12px 14px;
-  border-top: 1px solid rgba(255,255,255,.10);
-  display:flex; justify-content:flex-end; gap:10px;
-}
-.is-hidden{ display:none !important; }
-
-.modal.is-hidden { display:none !important; }
+.is-hidden { display: none !important; }
+.modal.is-hidden { display: none !important; }
 
 .modal { position: fixed; inset: 0; z-index: 9999; }
-.modalBackdrop { position:absolute; inset:0; background: rgba(0,0,0,.55); }
+.modalBackdrop { position: absolute; inset: 0; background: rgba(0,0,0,.55); }
 
 .modalCard{
   position: relative;
@@ -572,3 +544,25 @@ td.right {
 .modalSub{ opacity:.75; font-size: 12px; margin-top: 2px; }
 
 #expAptWrap.is-hidden{ display:none; }
+
+.badge{
+  display:inline-block;
+  padding:2px 8px;
+  border-radius:999px;
+  font-size:12px;
+  line-height:18px;
+  border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.08);
+  color:rgba(255,255,255,.92);
+  white-space:nowrap;
+}
+
+.badge.airbnb{ background: rgba(255, 99, 132, .18); border-color: rgba(255, 99, 132, .35); }
+.badge.booking{ background: rgba(56, 189, 248, .16); border-color: rgba(56, 189, 248, .35); }
+.badge.vrbo{ background: rgba(163, 230, 53, .14); border-color: rgba(163, 230, 53, .35); }
+.badge.direct{ background: rgba(167, 139, 250, .16); border-color: rgba(167, 139, 250, .35); }
+.badge.other{ background: rgba(251, 146, 60, .14); border-color: rgba(251, 146, 60, .35); }
+.badge.unknown{ background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.12); }
+
+.dataTable td.center, .dataTable th.center { text-align:center; }
+
