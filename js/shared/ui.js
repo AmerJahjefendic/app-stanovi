@@ -25,11 +25,28 @@ export function renderPeriodList(root, periods, selectedKey) {
   }
 }
 
-export function renderKPIs({ income, expenses, net, nights }, els) {
-  els.kpiIncome.textContent = fmtEUR(income, { dashIfNull: true });
-  els.kpiExpenses.textContent = fmtEUR(expenses, { dashIfNull: true });
-  els.kpiNet.textContent = fmtEUR(net, { dashIfNull: true });
-  els.kpiNights.textContent = fmtNum(nights, { dashIfNull: true });
+
+export function renderKPIs({ income, expenses, net, nights, net_avg, expense_ratio}, els) {
+   els.kpiIncome.textContent = fmtEUR(income, { dashIfNull: true });
+   els.kpiExpenses.textContent = fmtEUR(expenses, { dashIfNull: true });
+   els.kpiNet.textContent = fmtEUR(net, { dashIfNull: true });
+   els.kpiNights.textContent = fmtNum(nights, { dashIfNull: true });
+// Novo KPI
+function fmtPct01(x) {
+  if (!Number.isFinite(x)) return "—";
+  return `${(x * 100).toFixed(1)}%`;
+}
+
+if (els.kpiNetAvg) {
+  els.kpiNetAvg.textContent =
+    net_avg == null ? "—" : fmtEUR(net_avg, { dashIfNull: true });
+}
+
+if (els.kpiExpenseRatio) {
+  els.kpiExpenseRatio.textContent =
+    expense_ratio == null ? "—" : fmtPct01(expense_ratio);
+}
+// kraj Novo KPI  
 }
 
 export function renderIncomeTable(root, perApt, aptFilter) {

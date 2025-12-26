@@ -55,6 +55,8 @@ const els = {
   kpiExpenses: document.getElementById("kpiExpenses"),
   kpiNet: document.getElementById("kpiNet"),
   kpiNights: document.getElementById("kpiNights"),
+  kpiNetAvg: document.getElementById("kpiNetAvg"),
+  kpiExpenseRatio: document.getElementById("kpiExpenseRatio"),
   incomeTable: document.getElementById("incomeTable"),
   expenseTable: document.getElementById("expenseTable"),
   nNote: document.getElementById("nNote"),
@@ -129,6 +131,22 @@ async function refreshPeriodCalendar() {
   return imports;
 }
 
+//Novo za KPI
+function addAvgFieldsToKpi(kpi, monthsCount) {
+  const income = Number(kpi?.income || 0);
+  const expenses = Number(kpi?.expenses || 0);
+  const net = Number(kpi?.net || 0);
+
+  const m = Number(monthsCount || 0);
+
+  return {
+    ...kpi,
+    net_avg: (m > 0) ? (net / m) : null,
+    expense_ratio: (income > 0) ? (expenses / income) : null, // 0..1
+  };
+}
+//Kraj novo za KPI
+
 async function render() {
   const imports = await refreshPeriodCalendar();
 
@@ -185,6 +203,9 @@ async function render() {
     });
 
     renderKPIs(report.kpi, els);
+    const monthsCount = rowsByMonth.length;
+    const kpi2 = addAvgFieldsToKpi(report.kpi, monthsCount);
+    renderKPIs(kpi2, els);
     renderIncomeTable(els.incomeTable, report.perApt, state.aptFilter);
     renderExpenseTable(els.expenseTable, report, state.aptFilter);
     renderNNote(els.nNote, null);
@@ -210,6 +231,9 @@ async function render() {
     });
 
     renderKPIs(report.kpi, els);
+    const monthsCount = rowsByMonth.length;
+    const kpi2 = addAvgFieldsToKpi(report.kpi, monthsCount);
+    renderKPIs(kpi2, els);
     renderIncomeTable(els.incomeTable, report.perApt, state.aptFilter);
     renderExpenseTable(els.expenseTable, report, state.aptFilter);
     renderNNote(els.nNote, null);
@@ -239,6 +263,8 @@ async function render() {
   );
 
   renderKPIs(report.kpi, els);
+  const kpi2 = addAvgFieldsToKpi(report.kpi, 1);
+  renderKPIs(kpi2, els);
   renderIncomeTable(els.incomeTable, report.perApt, state.aptFilter);
   renderExpenseTable(els.expenseTable, report, state.aptFilter);
   renderNNote(els.nNote, data.nCommission);
@@ -261,7 +287,7 @@ async function handleImport(file) {
     if (!ok) return;
     await dbDeleteByIndex("imports", "by_period", [parsed.period.year, parsed.period.month]);
     await dbDeleteByIndex("income_monthly", "by_period", [parsed.period.year, parsed.period.month]);
-    await dbDeleteByIndex("income_items", "by_period", [parsed.period.year, parsed.period.month]).catch(() => {});
+    await dbDeleteByIndex("income_items", "by_period", [parsed.period.year, parsed.period.month]).catch(() => { });
     await dbDeleteByIndex("expenses", "by_period", [parsed.period.year, parsed.period.month]);
     await dbDeleteByIndex("n_commission", "by_period", [parsed.period.year, parsed.period.month]);
   }

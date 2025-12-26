@@ -36,6 +36,7 @@ const els = {
     status: document.getElementById("expStatus"),
     expApt: document.getElementById("expApt"),
     expCat: document.getElementById("expCat"),
+    byApt: document.getElementById("expByApt"),
     byCat: document.getElementById("expByCat"),
     list: document.getElementById("expList"),
 
@@ -58,9 +59,12 @@ const state = {
     selectedCalendarYear: null,
     selectedPeriodKey: null,
     isYearView: false,
+    listCollapsed: true,
 };
 
 // ---------- helpers ----------
+
+
 function normCat(exp) {
     const raw =
         (exp.category && String(exp.category).trim()) ? String(exp.category).trim()
@@ -154,12 +158,12 @@ function buildIncomeMap(incomeMonthlyRows, incomeItems) {
         if (r.apartment !== APARTMENTS.A && r.apartment !== APARTMENTS.Z) continue;
 
         const key = periodKey(r.year, r.month);
-        
+
         // Ako već postoje podaci iz income_items za ovaj period, preskačemo income_monthly
         if (map.has(key)) {
             const existing = map.get(key);
-            const hasItems = existing.A.income > 0 || existing.Z.income > 0 || 
-                           existing.A.nights > 0 || existing.Z.nights > 0;
+            const hasItems = existing.A.income > 0 || existing.Z.income > 0 ||
+                existing.A.nights > 0 || existing.Z.nights > 0;
             if (hasItems) continue;
         }
 
@@ -225,6 +229,48 @@ function buildRenderableExpenses(rawExpenses, incomeMonthlyRows, incomeItems, sh
         }
     }
     return out;
+}
+function computeExpensesByApt(expenses) {
+    const sums = { A: 0, Z: 0, N: 0 };
+    for (const e of expenses || []) {
+        const apt = e.apartment;
+        if (apt === "A" || apt === "Z" || apt === "N") {
+            sums[apt] += Number(e.amount_eur || 0);
+        }
+    }
+    const total = sums.A + sums.Z + sums.N;
+    return { sums, total };
+}
+
+function renderExpensesByApt(root, data) {
+    if (!root) return;
+    const { sums, total } = data;
+
+    // koristi isti formatter kao ui.js (jednostavno, bez importa)
+    const fmtEUR = (x) => {
+        const n = Number(x || 0);
+        return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(n);
+    };
+
+    root.innerHTML = `
+    <table class="catTable">
+      <thead>
+        <tr>
+          <th>Apartman</th>
+          <th class="right">Troškovi (EUR)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><b>A</b></td><td class="right">${fmtEUR(sums.A)}</td></tr>
+        <tr><td><b>Z</b></td><td class="right">${fmtEUR(sums.Z)}</td></tr>
+        <tr><td><b>N</b></td><td class="right">${fmtEUR(sums.N)}</td></tr>
+        <tr class="totalRow">
+          <td><b>UKUPNO</b></td>
+          <td class="right"><b>${fmtEUR(total)}</b></td>
+        </tr>
+      </tbody>
+    </table>
+  `;
 }
 
 /**
@@ -503,18 +549,12 @@ async function render() {
             `Godina: ${y} (svi mjeseci) — Stavki: ${filtered.length}`;
     }
 
-    // YEAR view → sakrij listu po defaultu
-    if (!isMonthView && els.listWrap && els.listToggle) {
-        els.listWrap.classList.add("is-hidden");
-        els.listToggle.textContent = "Prikaži";
+    if (els.listWrap && els.listToggle) {
+        els.listWrap.classList.toggle("is-hidden", state.listCollapsed);
+        els.listToggle.textContent = state.listCollapsed ? "Prikaži" : "Sakrij";
     }
 
-    // MONTH view → pokaži listu
-    if (isMonthView && els.listWrap && els.listToggle) {
-        els.listWrap.classList.remove("is-hidden");
-        els.listToggle.textContent = "Sakrij";
-    }
-
+    renderExpensesByApt(els.byApt, computeExpensesByApt(filtered));
     renderExpensesByCategory(els.byCat, filtered);
     renderExpensesList(els.list, filtered);
 }
@@ -590,7 +630,7 @@ async function handleSaveExpense() {
  * Postavlja sve event listenere na UI elemente
  */
 function attach() {
-    els.listToggle?.addEventListener("click", async () => {
+    els.listToggle?.addEventListener("click", () => {
         state.listCollapsed = !state.listCollapsed;
         els.listWrap?.classList.toggle("is-hidden", state.listCollapsed);
         els.listToggle.textContent = state.listCollapsed ? "Prikaži" : "Sakrij";
@@ -718,14 +758,14 @@ function attach() {
 (async () => {
     await loadCategoryAliases();
     attach();
-    
+
     // Preslušaj promjene shareRule iz drugih tabova
     window.addEventListener("storage", (e) => {
         if (e.key === LS_KEYS.shareRule) {
             render(); // ponovo izračunaj split SHARED stavki
         }
     });
-    
+
     await withLoading(async () => { await render(); });
 })();
 
