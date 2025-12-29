@@ -18,7 +18,6 @@ export const SCOPE = {
 export const SHARE_RULE = {
   INCOME: "INCOME",
   NIGHTS: "NIGHTS",
-  HALF: "HALF",
 };
 
 export const FX = {

@@ -7,14 +7,23 @@ function round2(x) {
 }
 
 // Helper to build KPI from per-apartment aggregates
-function buildKpiFromPerApt(perApt, aptFilter, sharedTotal, nCommission) {
+function buildKpiFromPerApt(perApt, aptFilter, sharedTotal, nCommission, sharedA, sharedZ, aTotal, zTotal, nTotal) {
   if (APT_LIST.includes(aptFilter)) {
     const r = perApt[aptFilter] || { income: 0, expenses: 0, net: 0, nights: 0 };
-    const sharedAlloc = aptFilter === APARTMENTS.A
-      ? perApt.A?.expenses || 0
-      : aptFilter === APARTMENTS.Z
-        ? perApt.Z?.expenses || 0
-        : 0;
+    
+    let sharedAlloc = 0;
+    let aptExpenses = 0;
+    
+    if (aptFilter === APARTMENTS.A) {
+      sharedAlloc = sharedA;
+      aptExpenses = aTotal;
+    } else if (aptFilter === APARTMENTS.Z) {
+      sharedAlloc = sharedZ;
+      aptExpenses = zTotal;
+    } else if (aptFilter === APARTMENTS.N) {
+      sharedAlloc = 0;
+      aptExpenses = nTotal;
+    }
 
     return {
       income: round2(r.income),
@@ -23,6 +32,7 @@ function buildKpiFromPerApt(perApt, aptFilter, sharedTotal, nCommission) {
       nights: round2(r.nights),
       sharedTotal: round2(sharedTotal),
       sharedAlloc: round2(sharedAlloc),
+      aptExpenses: round2(aptExpenses),
       nCommission: round2(nCommission),
     };
   }
@@ -30,6 +40,7 @@ function buildKpiFromPerApt(perApt, aptFilter, sharedTotal, nCommission) {
   const totalIncome = (perApt.A?.income || 0) + (perApt.Z?.income || 0) + (perApt.N?.income || 0);
   const totalExpenses = (perApt.A?.expenses || 0) + (perApt.Z?.expenses || 0) + (perApt.N?.expenses || 0);
   const totalNights = (perApt.A?.nights || 0) + (perApt.Z?.nights || 0) + (perApt.N?.nights || 0);
+  const totalAptExpenses = aTotal + zTotal + nTotal;
 
   return {
     income: round2(totalIncome),
@@ -37,6 +48,8 @@ function buildKpiFromPerApt(perApt, aptFilter, sharedTotal, nCommission) {
     net: round2(totalIncome - totalExpenses),
     nights: round2(totalNights),
     sharedTotal: round2(sharedTotal),
+    sharedAlloc: round2(sharedTotal),
+    aptExpenses: round2(totalAptExpenses),
     nCommission: round2(nCommission),
   };
 }
@@ -50,9 +63,12 @@ function nightsFromDates(checkin, checkout) {
   const b = safeDate(checkout);
   if (!a || !b) return 0;
 
-  const ms = b.getTime() - a.getTime();
-  const nights = Math.round(ms / (1000 * 60 * 60 * 24));
-  return nights > 0 ? nights : 0;
+  // date-only normalizacija (UTC midnight) da izbjegnemo DST/timezone probleme
+  const A = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+  const B = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+
+  const days = Math.floor((B - A) / (1000 * 60 * 60 * 24));
+  return days > 0 ? days : 0;
 }
 
 // incomeItems -> { A:{income,nights}, Z:{...}, N:{...} }
@@ -120,11 +136,19 @@ export function computePeriodReport(
 
   // Expenses
   const shared = expArr.filter((e) => e.scope === SCOPE.SHARED);
+  const aExp = expArr.filter(
+    (e) => e.scope === SCOPE.APARTMENT && e.apartment === APARTMENTS.A
+  );
+  const zExp = expArr.filter(
+    (e) => e.scope === SCOPE.APARTMENT && e.apartment === APARTMENTS.Z
+  );
   const nExp = expArr.filter(
     (e) => e.scope === SCOPE.APARTMENT && e.apartment === APARTMENTS.N
   );
 
   const sharedTotal = shared.reduce((s, e) => s + (Number(e.amount_eur || 0) || 0), 0);
+  const aTotal = aExp.reduce((s, e) => s + (Number(e.amount_eur || 0) || 0), 0);
+  const zTotal = zExp.reduce((s, e) => s + (Number(e.amount_eur || 0) || 0), 0);
   const nTotal = nExp.reduce((s, e) => s + (Number(e.amount_eur || 0) || 0), 0);
 
   // Allocate shared between A and Z
@@ -150,7 +174,7 @@ export function computePeriodReport(
   }
 
   const sharedA = sharedTotal * aShare;
-  const sharedZ = sharedTotal * zShare;
+  const sharedZ = sharedTotal - sharedA;  // garantuje sharedA + sharedZ = sharedTotal
 
   // N: income = commission (not total income), expenses = N expenses
   const nComm = Number(nCommission?.commission_eur || 0) || 0;
@@ -159,14 +183,14 @@ export function computePeriodReport(
     A: {
       income: A.income,
       nights: A.nights,
-      expenses: sharedA,
-      net: A.income - sharedA,
+      expenses: sharedA + aTotal,
+      net: A.income - (sharedA + aTotal),
     },
     Z: {
       income: Z.income,
       nights: Z.nights,
-      expenses: sharedZ,
-      net: Z.income - sharedZ,
+      expenses: sharedZ + zTotal,
+      net: Z.income - (sharedZ + zTotal),
     },
     N: {
       income: nComm,
@@ -175,7 +199,7 @@ export function computePeriodReport(
       net: nComm - nTotal,
     },
   };
-  const kpi = buildKpiFromPerApt(perApt, aptFilter, sharedTotal, nComm);
+  const kpi = buildKpiFromPerApt(perApt, aptFilter, sharedTotal, nComm, sharedA, sharedZ, aTotal, zTotal, nTotal);
 
   return {
     perApt: {
@@ -202,6 +226,8 @@ export function computePeriodReport(
     sharedTotal: round2(sharedTotal),
     sharedA: round2(sharedA),
     sharedZ: round2(sharedZ),
+    aTotal: round2(aTotal),
+    zTotal: round2(zTotal),
     nTotal: round2(nTotal),
   };
 }
@@ -217,6 +243,11 @@ export function computeYearReport(rowsByMonth, opts) {
   };
 
   let sharedTotalYear = 0;
+  let sharedAYear = 0;
+  let sharedZYear = 0;
+  let aTotalYear = 0;
+  let zTotalYear = 0;
+  let nTotalYear = 0;
 
   for (const m of rowsArr) {
     const rep = computePeriodReport(
@@ -237,9 +268,14 @@ export function computeYearReport(rowsByMonth, opts) {
     }
 
     sharedTotalYear += rep.sharedTotal || 0;
+    sharedAYear += rep.sharedA || 0;
+    sharedZYear += rep.sharedZ || 0;
+    aTotalYear += rep.aTotal || 0;
+    zTotalYear += rep.zTotal || 0;
+    nTotalYear += rep.nTotal || 0;
   }
 
-  const kpi = buildKpiFromPerApt(sumPerApt, opts.aptFilter, sharedTotalYear, sumPerApt.N.income);
+  const kpi = buildKpiFromPerApt(sumPerApt, opts.aptFilter, sharedTotalYear, sumPerApt.N.income, sharedAYear, sharedZYear, aTotalYear, zTotalYear, nTotalYear);
 
   return {
     perApt: {

@@ -1,4 +1,5 @@
 // js/app/home.page.js
+import { renderPeriodReportToPrintRoot, printToPdf } from "../shared/pdf.js";
 import { loadCategoryAliases } from "../shared/mappingConfig.js";
 await loadCategoryAliases();
 
@@ -261,6 +262,7 @@ async function render() {
     },
     { aptFilter: state.aptFilter, shareRule: state.shareRule }
   );
+  console.log("Period report dto", JSON.parse(JSON.stringify(report)));
 
   renderKPIs(report.kpi, els);
   const kpi2 = addAvgFieldsToKpi(report.kpi, 1);
