@@ -323,19 +323,40 @@ export function shoppingGroupFromApartment(apartment) {
   return (apartment === "N") ? "N" : "AZ";
 }
 
-export async function shoppingAddItem({ group, name, note = "", unit = "pcs", status = "IN_STOCK" }) {
+function _normName(s) {
+  return String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+export async function shoppingExistsByName(group, name) {
+  const rows = await shoppingListByGroup(group);
+  const target = _normName(name);
+  return rows.some(r => _normName(r.name) === target);
+}
+
+export async function shoppingAddItem({ group, name, note = "", unit = "pcs", qty = null, status = "IN_STOCK" }) {
+  const cleanName = String(name || "").trim();
+  if (!cleanName) throw new Error("Naziv artikla je prazan.");
+
+  // ✅ duplikat provjera po group-u (AZ i N odvojeno)
+  const exists = await shoppingExistsByName(group, cleanName);
+  if (exists) throw new Error(`Stavka "${cleanName}" već postoji u ovoj listi (${group}).`);
+
+  const q = (qty === "" || qty === null || qty === undefined) ? null : Number(qty);
+
   const rec = {
     id: makeId("shop"),
     group,
-    name: String(name || "").trim(),
+    name: cleanName,
     note: String(note || "").trim(),
     unit: String(unit || "pcs").trim(),
+    qty: Number.isFinite(q) && q > 0 ? q : null, // opcionalno, samo >0
     status,
     updated_at: new Date().toISOString(),
   };
-  if (!rec.name) throw new Error("Naziv artikla je prazan.");
+
   return dbPutOne(SHOP_STORE, rec);
 }
+
 
 export async function shoppingToggleStatus(id) {
   const row = await dbGetOne(SHOP_STORE, id);
@@ -362,4 +383,19 @@ export async function shoppingListByGroupStatus(group, status) {
 export async function shoppingCountToBuy(group) {
   const rows = await shoppingListByGroupStatus(group, "TO_BUY");
   return rows.length;
+}
+
+export async function shoppingBumpQty(id, delta) {
+  const row = await dbGetOne(SHOP_STORE, id);
+  if (!row) return false;
+
+  const cur = Number(row.qty);
+  const base = Number.isFinite(cur) && cur > 0 ? cur : 0;
+  const next = base + Number(delta || 0);
+
+  // Pravilo: ako padne na 0 ili manje -> qty = null (nije obavezno polje)
+  row.qty = next > 0 ? next : null;
+  row.updated_at = new Date().toISOString();
+
+  return dbPutOne(SHOP_STORE, row);
 }
