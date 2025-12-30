@@ -575,8 +575,8 @@ td.right {
 .mobileMenu, .menuBackdrop { display: none; }
 
 @media (max-width: 900px) {
-  /* sakrij desktop actions dugmad, ostavi burger */
-  .topbar .actions > :not(.menuBtn) { display: none !important; }
+  /* sakrij desktop actions dugmad, ostavi burger i shopping */
+  .topbar .actions > :not(.menuBtn):not(.keepVisible) { display: none !important; }
   .menuBtn { display: inline-flex; }
 
   .menuBackdrop {

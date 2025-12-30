@@ -412,7 +412,6 @@ async function restoreBackupFile(file) {
 
 attachEvents(els, { render, handleImport, exportBackup, restoreBackupFile });
 loadSettings();
-initMobileMenu();
 
 // Shopping badges refresh
 async function refreshShoppingBadges() {
@@ -442,4 +441,5 @@ window.addEventListener("storage", (e) => {
 withLoading(async () => {
   await render();
   await refreshShoppingBadges();
+  initMobileMenu();
 });
