@@ -575,9 +575,14 @@ td.right {
 .mobileMenu, .menuBackdrop { display: none; }
 
 @media (max-width: 900px) {
-  /* sakrij desktop actions dugmad, ostavi burger i shopping */
-  .topbar .actions > :not(.menuBtn):not(.keepVisible) { display: none !important; }
-  .menuBtn { display: inline-flex; }
+  /* sakrij sve u actions osim onoga što eksplicitno želiš */
+  .topbar .actions > * { display: none !important; }
+
+  /* ostavi vidljivo: burger ili dugmad koja imaju keepVisible */
+  .topbar .actions .menuBtn,
+  .topbar .actions .keepVisible {
+    display: inline-flex !important;
+  }
 
   .menuBackdrop {
     display: block;
