@@ -1,4 +1,5 @@
-#print-root { display: none; }
+/* uvijek sakriveno na ekranu */
+#print-root { display: none !important; }
 
 @media print {
   @page { size: A4 landscape; margin: 12mm; }

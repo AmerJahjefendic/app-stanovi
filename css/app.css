@@ -566,3 +566,5 @@ td.right {
 
 .dataTable td.center, .dataTable th.center { text-align:center; }
 
+/* Print root nikad ne prikazuj na ekranu */
+#print-root { display: none !important; }
