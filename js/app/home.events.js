@@ -1,10 +1,14 @@
 // js/app/home.events.js
-import { keyFromPeriod } from "../shared/utils.js";
+import { keyFromPeriod, getMonthLabel, periodKeyToYM } from "../shared/utils.js";
 import { showPop, hidePops, setPickerLabel } from "./home.ui.js";
-import { printToPdf } from "../shared/pdf.js";
+import { loadPeriodData } from "./home.data.js";
+import { computePeriodReport, computeNOwnerReport } from "../reports/metrics.service.js";
+import { renderPeriodReportToPrintRoot, renderNOwnerReportToPrintRoot, printToPdf } from "../shared/pdf.js";
 import { dbGetAll } from "../db/db.js";
 import { state } from "../shared/state.js";
 import { setShareRule } from "../shared/settings.js";
+import { periodLabel } from "../shared/parseFilename.js";
+import { APARTMENT_META } from "../shared/constants.js";
 
 export function attachEvents(els, handlers) {
   const { render, handleImport, exportBackup, restoreBackupFile } = handlers;
@@ -141,5 +145,59 @@ export function attachEvents(els, handlers) {
   });
 
   // Print
-  els.btnPrint?.addEventListener("click", () => printToPdf());
+  els.btnPrint?.addEventListener("click", async () => {
+    try {
+      const m = String(state.selectedPeriodKey || "").match(/^(\d{4})-(\d{2})$/);
+      if (!m) throw new Error("Nije odabran mjesec. Klikni prvo na mjesec u kalendaru.");
+      
+      const year = Number(m[1]);
+      const month = Number(m[2]);
+      const data = await loadPeriodData(year, month);
+
+      // Dinamički povlači meta podatke na osnovu odabranog apartmana
+      const aptMeta = APARTMENT_META[state.aptFilter] || APARTMENT_META.N;
+
+      if (state.aptFilter === "N") {
+        const core = computeNOwnerReport(
+          { incomeItems: data.incomeItems, nCommission: data.nCommission },
+          { year, month }
+        );
+
+        const dto = {
+          meta: {
+            monthLabel: getMonthLabel(month),
+            year,
+            ...aptMeta,
+          },
+          rows: core.rows,
+          stats: core.stats,
+        };
+
+        renderNOwnerReportToPrintRoot(dto, { 
+          title: `Izvještaj za vlasnika – ${getMonthLabel(month)} ${year}` 
+        });
+      } else {
+        const report = computePeriodReport(
+          {
+            incomeMonthly: data.incomeMonthly,
+            incomeItems: data.incomeItems,
+            expenses: data.expenses,
+            nCommission: data.nCommission,
+          },
+          { aptFilter: state.aptFilter, shareRule: state.shareRule }
+        );
+
+        renderPeriodReportToPrintRoot(report, {
+          title: `Mjesečni izvještaj – ${getMonthLabel(month)} ${year}`,
+          aptFilter: state.aptFilter,
+          shareRule: state.shareRule,
+        });
+      }
+
+      printToPdf();
+    } catch (err) {
+      console.error(err);
+      alert(err?.message || "Greška prilikom pripreme PDF-a.");
+    }
+  });
 }

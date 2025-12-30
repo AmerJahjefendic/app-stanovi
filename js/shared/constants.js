@@ -27,3 +27,22 @@ export const FX = {
 export const LS_KEYS = {
   shareRule: "appstanovi_shareRule",
 };
+
+// Meta podaci za PDF izvještaje po apartmanu
+export const APARTMENT_META = {
+  A: {
+    propertyName: "Apartment A",
+    ownerName: "Ime vlasnika A",
+    agencyName: "Sarajevo from A to Z",
+  },
+  Z: {
+    propertyName: "Apartment Z", 
+    ownerName: "Ime vlasnika Z",
+    agencyName: "Sarajevo from A to Z",
+  },
+  N: {
+    propertyName: "Lux City Center",
+    ownerName: "Nermin Ćeman",
+    agencyName: "Sarajevo from A to Z",
+  },
+};

@@ -9,6 +9,17 @@ export function periodKeyToYM(key) {
   return { year: y, month: m };
 }
 
+// Nazivi mjeseci na bosanskom jeziku
+export const MONTH_NAMES = [
+  "Januar", "Februar", "Mart", "April", "Maj", "Juni",
+  "Juli", "Avgust", "Septembar", "Oktobar", "Novembar", "Decembar"
+];
+
+// Vraća naziv mjeseca (1-12 -> "Januar"-"Decembar")
+export function getMonthLabel(month) {
+  return MONTH_NAMES[month - 1] || "";
+}
+
 // Standardni helper za sigurno parsiranje datuma
 export function safeDate(x) {
   const d = new Date(x);

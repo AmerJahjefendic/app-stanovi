@@ -10,10 +10,10 @@ function round2(x) {
 function buildKpiFromPerApt(perApt, aptFilter, sharedTotal, nCommission, sharedA, sharedZ, aTotal, zTotal, nTotal) {
   if (APT_LIST.includes(aptFilter)) {
     const r = perApt[aptFilter] || { income: 0, expenses: 0, net: 0, nights: 0 };
-    
+
     let sharedAlloc = 0;
     let aptExpenses = 0;
-    
+
     if (aptFilter === APARTMENTS.A) {
       sharedAlloc = sharedA;
       aptExpenses = aTotal;
@@ -229,6 +229,82 @@ export function computePeriodReport(
     aTotal: round2(aTotal),
     zTotal: round2(zTotal),
     nTotal: round2(nTotal),
+  };
+}
+
+// =================== N OWNER REPORT (po rezervacijama) ===================
+// PDF sloj NE računa – sve kolone i statistika se pripremaju ovdje.
+
+export function computeNOwnerReport(
+  { incomeItems, nCommission },
+  { year, month }
+) {
+  const items = Array.isArray(incomeItems) ? incomeItems : [];
+
+  // uzmi samo N stavke koje imaju checkin/checkout
+  const rows0 = items
+    .filter((it) =>
+      it &&
+      it.apartment === APARTMENTS.N &&
+      it.checkin &&
+      it.checkout
+    )
+    .map((it) => {
+      const nights = (it.nights != null && it.nights !== "")
+        ? (Number(it.nights) || 0)
+        : nightsFromDates(it.checkin, it.checkout);
+
+
+      // Ukupan prihod (EUR) za owner report = NET nama (amount_eur) iz income_items
+      const totalIncomeEur = Number(it.amount_eur ?? 0) || 0;
+
+      // 25/75 raspodjela na amount_eur
+      const agencyCommissionEur = 0.25 * totalIncomeEur;
+      const ownerNetEur = 0.75 * totalIncomeEur;
+
+      // cijena po noći po istom “ukupan prihod” iznosu
+      const pricePerNightEur = nights > 0 ? (totalIncomeEur / nights) : 0;
+
+      return {
+        checkin: it.checkin,
+        checkout: it.checkout,
+        totalIncomeEur: round2(totalIncomeEur),
+        nights: round2(nights),
+        agencyCommissionEur: round2(agencyCommissionEur),
+        ownerNetEur: round2(ownerNetEur),
+        pricePerNightEur: round2(pricePerNightEur),
+      };
+    });
+
+  // sortiraj po checkin
+  rows0.sort((a, b) => String(a.checkin).localeCompare(String(b.checkin)));
+
+  const reservationsCount = rows0.length;
+  const nightsTotal = rows0.reduce((s, r) => s + (Number(r.nights) || 0), 0);
+  const incomeTotalEur = rows0.reduce((s, r) => s + (Number(r.totalIncomeEur) || 0), 0);
+
+  const avgStayLength = reservationsCount > 0 ? (nightsTotal / reservationsCount) : 0;
+  const avgPricePerNightEur = nightsTotal > 0 ? (incomeTotalEur / nightsTotal) : 0;
+
+  // Ukupan neto vlasnika:
+  // - ako nCommission.owner_eur postoji, uzmi to kao “izvor istine” (mjesečni agregat)
+  // - inače suma po redovima
+  const ownerNetTotalEur = round2(
+    rows0.reduce((s, r) => s + (Number(r.ownerNetEur) || 0), 0)
+  );
+
+  return {
+    year,
+    month,
+    rows: rows0,
+    stats: {
+      ownerNetTotalEur,
+      nightsTotal: round2(nightsTotal),
+      avgStayLength: round2(avgStayLength),
+      avgPricePerNightEur: round2(avgPricePerNightEur),
+      reservationsCount: round2(reservationsCount),
+      incomeTotalEur: round2(incomeTotalEur),
+    },
   };
 }
 

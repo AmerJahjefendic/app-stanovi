@@ -2,19 +2,29 @@
 
 @media print {
   @page { size: A4; margin: 12mm; }
-  @page landscape { size: A4 landscape; margin: 12mm; }
 
-  body * { visibility: hidden !important; }
-  #print-root, #print-root * { visibility: visible !important; }
+  /* sakrij sve osim print-root */
+  body > :not(#print-root) { display: none !important; }
   #print-root { display: block !important; }
+
+  /* reset boja/pozadine (bitno zbog dark theme-a) */
+  html, body { background: #fff !important; color: #000 !important; }
+  #print-root, .print-root { background: #fff !important; color: #000 !important; }
+
+  /* da root zauzme cijelu stranicu */
+  #print-root { position: static !important; }
 
   thead { display: table-header-group; }
   tfoot { display: table-footer-group; }
+
+  /* page breaks */
   tr, td, th { break-inside: avoid; page-break-inside: avoid; }
-  
   p, li { orphans: 3; widows: 3; }
-  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* opcionalno: možeš i maknuti exact da ne "vuče" tamne bg-ove */
+  /* * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } */
 }
+
 
 /* basic print styles */
 .print-root { font-family: system-ui, Arial, sans-serif; font-size: 11pt; }
@@ -29,3 +39,19 @@
 .print-kpi .row { display: flex; justify-content: space-between; border-bottom: 1px dashed #ddd; padding: 3px 0; }
 .avoid-break { break-inside: avoid; page-break-inside: avoid; }
 
+.print-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
+  margin-top: 6px;
+}
+
+.print-meta .kv {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px dashed #ddd;
+  padding: 3px 0;
+}
+
+.print-meta .k { font-weight: 600; }
+.print-meta .v { text-align: right; }

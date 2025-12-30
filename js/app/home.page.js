@@ -270,6 +270,11 @@ async function render() {
   renderIncomeTable(els.incomeTable, report.perApt, state.aptFilter);
   renderExpenseTable(els.expenseTable, report, state.aptFilter);
   renderNNote(els.nNote, data.nCommission);
+
+  // Auto-refresh print-root sa trenutnim report podacima
+  const monthNames = ["Januar", "Februar", "Mart", "April", "Maj", "Juni", "Juli", "Avgust", "Septembar", "Oktobar", "Novembar", "Decembar"];
+  const printTitle = `Mjesečni izvještaj – ${monthNames[month - 1]} ${year}`;
+  renderPeriodReportToPrintRoot(report, { title: printTitle });
 }
 
 async function handleImport(file) {
