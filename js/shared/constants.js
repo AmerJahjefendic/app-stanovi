@@ -41,7 +41,7 @@ export const APARTMENT_META = {
     agencyName: "Sarajevo from A to Z",
   },
   N: {
-    propertyName: "Lux City Center",
+    propertyName: "Gajev trg 2/3",
     ownerName: "Nermin Ćeman",
     agencyName: "Sarajevo from A to Z",
   },

@@ -8,6 +8,8 @@ function esc(s) {
     .replaceAll("'", "&#039;");
 }
 
+// Formatiranje EUR za PDF (jednostavno, bez separatora hiljada)
+// Za UI postoji fmtEUR() u utils.js sa Intl.NumberFormat
 function fmtEur(n) {
   if (n === null || n === undefined || n === "") return "";
   const x = Number(n);
@@ -121,6 +123,12 @@ export function renderPeriodReportToPrintRoot(
         </div>
       ` : ``}
 
+      <div class="signature-section">
+        <div class="signature-wrapper">
+          <img src="assets/stamp.png" alt="Pečat" class="stamp">
+          <img src="assets/signature.png" alt="Potpis" class="signature">
+        </div>
+      </div>
     </div>
   `;
 }
@@ -144,18 +152,6 @@ function fmtInt(n) {
 
 /**
  * N Owner report – PDF renderer (NE RAČUNA, samo ispisuje DTO)
- *
- * Očekivani DTO shape:
- * dto = {
- *   meta: { monthLabel, year, propertyName, ownerName, agencyName },
- *   rows: [
- *     { checkin, checkout, totalIncomeEur, nights, agencyCommissionEur, ownerNetEur, pricePerNightEur }
- *   ],
- *   stats: {
- *     ownerNetTotalEur, nightsTotal, avgStayLength, avgPricePerNightEur,
- *     reservationsCount, incomeTotalEur
- *   }
- * }
  */
 export function renderNOwnerReportToPrintRoot(dto, { title } = {}) {
   const root = document.getElementById("print-root");
@@ -169,61 +165,72 @@ export function renderNOwnerReportToPrintRoot(dto, { title } = {}) {
 
   root.innerHTML = `
     <div class="print-root">
-      <div class="print-title">${esc(pageTitle)}</div>
+    <div class="n-header">
+      <div class="n-title">${esc(title)}</div>
+      <div class="n-sub">${esc(meta.propertyName ?? "")}</div>
+    </div>
 
-      <div class="print-meta avoid-break">
-        <div class="kv"><div class="k">Mjesec</div><div class="v">${esc(meta.monthLabel ?? "")}</div></div>
-        <div class="kv"><div class="k">Godina</div><div class="v">${esc(meta.year ?? "")}</div></div>
-        <div class="kv"><div class="k">Nekretnina</div><div class="v">${esc(meta.propertyName ?? "")}</div></div>
-        <div class="kv"><div class="k">Vlasnik</div><div class="v">${esc(meta.ownerName ?? "")}</div></div>
-        <div class="kv"><div class="k">Agencija</div><div class="v">${esc(meta.agencyName ?? "")}</div></div>
-      </div>
+    <div class="n-meta-grid avoid-break">
+      <div class="kv"><div class="k">Mjesec:</div><div class="v">${esc(meta.monthLabel ?? "")}</div></div>
+      <div class="kv"><div class="k">Godina:</div><div class="v">${esc(meta.year ?? "")}</div></div>
+      <div class="kv"><div class="k">Nekretnina:</div><div class="v">${esc(meta.propertyName ?? "")}</div></div>
+      <div class="kv"><div class="k">Vlasnik:</div><div class="v">${esc(meta.ownerName ?? "")}</div></div>
+      <div class="kv"><div class="k">Agencija:</div><div class="v">${esc(meta.agencyName ?? "")}</div></div>
+      <div class="kv"><div class="k"></div><div class="v"></div></div>
+    </div>
 
-      <div class="print-section-title">Rezervacije</div>
-      <table class="print-table">
-        <thead>
-          <tr>
-            <th>Datum dolaska</th>
-            <th>Datum odlaska</th>
-            <th class="num">Ukupan prihod (EUR)</th>
-            <th class="center">Broj noćenja</th>
-            <th class="num">Provizija agencije (25%) (EUR)</th>
-            <th class="num">Neto prihod vlasnika (EUR)</th>
-            <th class="num">Cijena po noći</th>
+    <div class="print-section-title">Rezervacije</div>
+    <table class="n-table avoid-break">
+      <thead>
+        <tr>
+          <th>Datum dolaska</th>
+          <th>Datum odlaska</th>
+          <th class="num">Ukupan prihod (EUR)</th>
+          <th class="center">Broj noćenja</th>
+          <th class="num">Provizija agencije (25%) (EUR)</th>
+          <th class="num">Neto prihod vlasnika (EUR)</th>
+          <th class="num">Cijena po noći</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((r, i) => `
+          <tr class="${i % 2 ? "alt" : ""}">
+            <td>${esc(r.checkin)}</td>
+            <td>${esc(r.checkout)}</td>
+            <td class="num">${fmtEur(r.totalIncomeEur)}</td>
+            <td class="center">${esc(r.nights)}</td>
+            <td class="num">${fmtEur(r.agencyCommissionEur)}</td>
+            <td class="num">${fmtEur(r.ownerNetEur)}</td>
+            <td class="num">${fmtEur(r.pricePerNightEur)}</td>
           </tr>
-        </thead>
-        <tbody>
-          ${rows.length
-      ? rows
-        .map(
-          (r) => `
-            <tr>
-              <td>${fmtDateISO(r.checkin)}</td>
-              <td>${fmtDateISO(r.checkout)}</td>
-              <td class="num">${fmtEur(r.totalIncomeEur)}</td>
-              <td class="center">${fmtInt(r.nights)}</td>
-              <td class="num">${fmtEur(r.agencyCommissionEur)}</td>
-              <td class="num">${fmtEur(r.ownerNetEur)}</td>
-              <td class="num">${fmtEur(r.pricePerNightEur)}</td>
-            </tr>`
-        )
-        .join("")
-      : `<tr><td colspan="7" class="center">Nema rezervacija za izabrani period.</td></tr>`
-    }
-        </tbody>
-      </table>
+        `).join("")}
+      </tbody>
+    </table>
 
-      <div class="print-section-title">Statistika</div>
-      <div class="print-kpi avoid-break">
-        <div class="row"><span class="label">Ukupan neto prihod za vlasnika (EUR)</span><span class="value">${fmtEur(stats.ownerNetTotalEur)}</span></div>
-        <div class="row"><span class="label">Ukupan broj noćenja</span><span class="value">${fmtInt(stats.nightsTotal)}</span></div>
-        <div class="row"><span class="label">Prosječna dužina boravka (dani)</span><span class="value">${fmtEur(stats.avgStayLength)}</span></div>
-        <div class="row"><span class="label">Prosječna cijena po noćenju (EUR)</span><span class="value">${fmtEur(stats.avgPricePerNightEur)}</span></div>
-        <div class="row"><span class="label">Ukupan broj rezervacija</span><span class="value">${fmtInt(stats.reservationsCount)}</span></div>
-        <div class="row"><span class="label">Ukupan prihod za mjesec (EUR)</span><span class="value">${fmtEur(stats.incomeTotalEur)}</span></div>
+    <div class="print-section-title">Statistika</div>
+    <table class="n-stats avoid-break">
+      <thead>
+        <tr><th>Statistika</th><th class="num">Vrijednost</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Prosječna dužina boravka (dani)</td><td class="num">${esc(stats.avgStayLength)}</td></tr>
+        <tr><td>Prosječna cijena po noćenju (EUR)</td><td class="num">${fmtEur(stats.avgPricePerNightEur)}</td></tr>
+        <tr><td>Ukupan prihod za mjesec (EUR)</td><td class="num">${fmtEur(stats.incomeTotalEur)}</td></tr>
+        <tr><td>Ukupan neto prihod za vlasnika (EUR)</td><td class="num">${fmtEur(stats.ownerNetTotalEur)}</td></tr>
+        <tr><td>Ukupan broj rezervacija</td><td class="num">${esc(stats.reservationsCount)}</td></tr>
+        <tr><td>Ukupan broj noćenja</td><td class="num">${esc(stats.nightsTotal)}</td></tr>
+      </tbody>
+    </table>
+
+    <div class="signature-section">
+      <div class="signature-wrapper">
+        <img src="assets/stamp.png" alt="Pečat" class="stamp">
+        <img src="assets/signature.png" alt="Potpis" class="signature">
       </div>
     </div>
-  `;
+  </div>
+`;
+
 }
 
 export function printToPdf() {
