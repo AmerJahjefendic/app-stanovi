@@ -27,6 +27,7 @@ import {
   setLoading,
   showError,
   withLoading,
+  initMobileMenu
 } from "../shared/ui.js";
 import { getShareRule, setShareRule } from "../shared/settings.js";
 
@@ -35,6 +36,11 @@ import { loadPeriodData } from "./home.data.js";
 import { attachEvents } from "./home.events.js";
 
 const els = {
+  mBtnBackup: document.getElementById("mBtnBackup"),
+  mBackupInput: document.getElementById("mBackupInput"),
+  mFileInput: document.getElementById("mFileInput"),
+  mBtnPrint: document.getElementById("mBtnPrint"),
+
   fromBtn: document.getElementById("fromPeriodBtn"),
   toBtn: document.getElementById("toPeriodBtn"),
   fromPop: document.getElementById("fromCalPop"),
@@ -432,7 +438,7 @@ window.addEventListener("storage", (e) => {
   }
 });
 
-withLoading(async () => { 
-  await render(); 
+withLoading(async () => {
+  await render();
   await refreshShoppingBadges();
 });

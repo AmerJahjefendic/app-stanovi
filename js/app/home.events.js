@@ -200,4 +200,28 @@ export function attachEvents(els, handlers) {
       alert(err?.message || "Greška prilikom pripreme PDF-a.");
     }
   });
+
+  // Mobile mirror events
+  els.mBtnBackup?.addEventListener("click", async () => {
+    try { await exportBackup(); }
+    catch (e) { console.error(e); alert(e.message || "Backup greška"); }
+  });
+
+  els.mBackupInput?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try { await restoreBackupFile(file); }
+    catch (err) { console.error(err); alert(err.message || "Restore greška"); }
+    finally { els.mBackupInput.value = ""; }
+  });
+
+  els.mFileInput?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try { await handleImport(file); }
+    catch (err) { console.error(err); alert(err.message || "Greška pri importu."); }
+    finally { els.mFileInput.value = ""; }
+  });
+
+  els.mBtnPrint?.addEventListener("click", () => printToPdf());
 }

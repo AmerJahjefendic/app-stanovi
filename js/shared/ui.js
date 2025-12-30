@@ -217,4 +217,46 @@ export async function withLoading(fn, msg = "Učitavam…") {
   }
 }
 
+export function initMobileMenu({ btnId="btnMenu", menuId="mobileMenu", backdropId="menuBackdrop" } = {}) {
+  const btn = document.getElementById(btnId);
+  const menu = document.getElementById(menuId);
+  const backdrop = document.getElementById(backdropId);
+  if (!btn || !menu || !backdrop) return;
+
+  const close = () => {
+    menu.classList.add("is-hidden");
+    backdrop.classList.add("is-hidden");
+    menu.setAttribute("aria-hidden", "true");
+    btn.setAttribute("aria-expanded", "false");
+  };
+
+  const open = () => {
+    menu.classList.remove("is-hidden");
+    backdrop.classList.remove("is-hidden");
+    menu.setAttribute("aria-hidden", "false");
+    btn.setAttribute("aria-expanded", "true");
+  };
+
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    const isOpen = !menu.classList.contains("is-hidden");
+    isOpen ? close() : open();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") close();
+  });
+
+  backdrop.addEventListener("click", close);
+  menu.addEventListener("click", (e) => {
+    if (e.target.closest("[data-menu-close]")) close();
+  });
+
+  // zatvori ako promijeniš width u desktop
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 900) close();
+  });
+
+  return { open, close };
+}
 

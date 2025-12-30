@@ -568,3 +568,55 @@ td.right {
 
 /* Print root nikad ne prikazuj na ekranu */
 #print-root { display: none !important; }
+
+/* ===== Mobile menu (burger + drawer) ===== */
+.menuBtn { display: none; }
+
+.mobileMenu, .menuBackdrop { display: none; }
+
+@media (max-width: 900px) {
+  /* sakrij desktop actions dugmad, ostavi burger */
+  .topbar .actions > :not(.menuBtn) { display: none !important; }
+  .menuBtn { display: inline-flex; }
+
+  .menuBackdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.45);
+    z-index: 999;
+  }
+
+  .mobileMenu {
+    display: block;
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100%;
+    width: min(360px, 88vw);
+    background: #0f172a;            /* prilagodi tvojoj temi */
+    border-left: 1px solid rgba(255,255,255,.08);
+    z-index: 1000;
+    padding: 12px;
+    transform: translateX(0);
+  }
+
+  .mobileMenu.is-hidden { transform: translateX(110%); }
+  .menuBackdrop.is-hidden { display: none; }
+
+  .mobileMenuHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    margin-bottom: 12px;
+  }
+
+  .mobileMenuTitle { font-weight: 700; }
+
+  .mobileMenuBody { display: grid; gap: 10px; }
+
+  .btn.full { width: 100%; justify-content: center; }
+}

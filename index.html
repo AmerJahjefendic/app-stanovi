@@ -38,8 +38,42 @@
         <input id="fileInput" type="file" accept=".xlsx" hidden />
       </label>
       <button id="btnPrint" class="btn secondary">PDF / Print</button>
+      <button id="btnMenu" class="btn secondary menuBtn" type="button" aria-label="Meni" aria-expanded="false">
+        ☰
+      </button>
     </div>
   </header>
+  
+  <!-- MOBILE DRAWER MENU -->
+<div id="menuBackdrop" class="menuBackdrop is-hidden" data-menu-close></div>
+
+<nav id="mobileMenu" class="mobileMenu is-hidden" aria-hidden="true">
+  <div class="mobileMenuHeader">
+    <div class="mobileMenuTitle">Meni</div>
+    <button class="btn secondary" type="button" data-menu-close>✕</button>
+  </div>
+
+  <div class="mobileMenuBody">
+    <!-- OVDJE kopiraš iste akcije kao u topbaru -->
+    <a class="btn secondary full" href="expenses.html">Troškovi</a>
+    <a class="btn secondary full" href="income.html">Prihodi</a>
+
+    <button id="mBtnBackup" class="btn secondary full" type="button">Backup</button>
+
+    <label class="btn secondary full">
+      Restore
+      <input id="mBackupInput" type="file" accept=".json" hidden />
+    </label>
+
+    <label class="btn full">
+      Import XLSX
+      <input id="mFileInput" type="file" accept=".xlsx" hidden />
+    </label>
+
+    <button id="mBtnPrint" class="btn secondary full" type="button">PDF / Print</button>
+  </div>
+</nav>
+
   <!--//FILTER SIDE BAR//-->
   <main class="layout">
     <aside class="panel">
