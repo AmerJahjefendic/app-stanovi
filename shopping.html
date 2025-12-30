@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="bs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AppStanovi – Smart Shopping</title>
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">🛒</div>
+      <div>
+        <div class="title">Smart Shopping</div>
+        <div class="subtitle">1-click: IN_STOCK ↔ TO_BUY</div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <a class="btn secondary" href="index.html">Home</a>
+      <select id="groupSelect" class="btn">
+        <option value="AZ">Shared (A+Z)</option>
+        <option value="N">Apartman N</option>
+      </select>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card" style="margin-bottom:12px;">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <button class="btn secondary" data-filter="TO_BUY" id="filterToBuy">Za kupiti</button>
+        <button class="btn secondary" data-filter="IN_STOCK" id="filterInStock">Na stanju</button>
+        <button class="btn secondary" data-filter="ALL" id="filterAll">Sve</button>
+
+        <div style="flex:1"></div>
+
+        <input id="searchInput" class="input" placeholder="Pretraga..." style="max-width:260px;" />
+      </div>
+    </section>
+
+    <section class="card" style="margin-bottom:12px;">
+      <form id="addForm" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <input id="nameInput" class="input" placeholder="Novi artikal (npr. WC papir)" style="min-width:260px;" />
+        <input id="noteInput" class="input" placeholder="Napomena (opcionalno)" style="min-width:220px;" />
+        <select id="statusInput" class="input">
+          <option value="IN_STOCK">Na stanju</option>
+          <option value="TO_BUY">Za kupiti</option>
+        </select>
+        <button class="btn" type="submit">Dodaj</button>
+      </form>
+      <div class="hint" style="margin-top:8px;">
+        Klik na stavku: toggle status. Ikona 🗑 briše stavku.
+      </div>
+    </section>
+
+    <section class="card">
+      <div id="listRoot"></div>
+    </section>
+  </main>
+
+  <script type="module" src="js/shopping/shopping.js"></script>
+</body>
+</html>

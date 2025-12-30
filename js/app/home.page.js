@@ -10,6 +10,7 @@ import {
   dbGetOneByIndex,
   dbPutOne,
   dbPutMany,
+  shoppingCountToBuy,
 } from "../db/db.js";
 
 import { keyFromPeriod, periodKeyToYM } from "../shared/utils.js";
@@ -406,6 +407,22 @@ async function restoreBackupFile(file) {
 attachEvents(els, { render, handleImport, exportBackup, restoreBackupFile });
 loadSettings();
 
+// Shopping badges refresh
+async function refreshShoppingBadges() {
+  try {
+    const az = await shoppingCountToBuy("AZ");
+    const n = await shoppingCountToBuy("N");
+
+    const elAZ = document.getElementById("shopBadgeAZ");
+    const elN = document.getElementById("shopBadgeN");
+
+    if (elAZ) elAZ.textContent = az;
+    if (elN) elN.textContent = n;
+  } catch (e) {
+    console.warn("[shopping] badge error", e);
+  }
+}
+
 // Preslušaj promjene shareRule iz drugih tabova ili iz same stranice (synthetic event)
 window.addEventListener("storage", (e) => {
   if (e.key === LS_KEYS.shareRule) {
@@ -415,4 +432,7 @@ window.addEventListener("storage", (e) => {
   }
 });
 
-withLoading(async () => { await render(); });
+withLoading(async () => { 
+  await render(); 
+  await refreshShoppingBadges();
+});

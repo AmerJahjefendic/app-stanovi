@@ -1,6 +1,6 @@
 // js/db.js
 const DB_NAME = "appstanovi_db";
-const DB_VER = 7;
+const DB_VER = 8;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -49,6 +49,21 @@ function openDB() {
         const s = db.createObjectStore("n_commission", { keyPath: "id" });
         s.createIndex("by_period", ["year", "month"], { unique: true });
       }
+
+      // ===== SHOPPING ITEMS =====
+      if (!db.objectStoreNames.contains("shopping_items")) {
+        const s = db.createObjectStore("shopping_items", { keyPath: "id" });
+
+        // Filtriranje i badge count:
+        s.createIndex("by_group", "group", { unique: false });
+        s.createIndex("by_status", "status", { unique: false });
+
+        // Najkorisniji index: group + status
+        s.createIndex("by_group_status", ["group", "status"], { unique: false });
+
+        // Opcionalno za sortiranje po zadnjoj izmjeni
+        s.createIndex("by_updated_at", "updated_at", { unique: false });
+      }
     };
 
     req.onblocked = () => {
@@ -60,7 +75,7 @@ function openDB() {
 
       // Ako druga stranica uradi upgrade DB-a, ova konekcija mora da se zatvori
       db.onversionchange = () => {
-        try { db.close(); } catch {}
+        try { db.close(); } catch { }
         _dbPromise = null; // reset cache da se sljedeći poziv ponovo otvori
         console.warn("[db] versionchange -> connection closed. Reload page / close other tabs.");
       };
@@ -298,4 +313,53 @@ export async function dbResolveCategoryAlias(from) {
   if (!key) return null;
   const row = await dbGetOne("category_aliases", key);
   return row?.to || null;
+}
+
+// ================== SMART SHOPPING API ==================
+const SHOP_STORE = "shopping_items";
+
+export function shoppingGroupFromApartment(apartment) {
+  // A i Z su shared
+  return (apartment === "N") ? "N" : "AZ";
+}
+
+export async function shoppingAddItem({ group, name, note = "", unit = "pcs", status = "IN_STOCK" }) {
+  const rec = {
+    id: makeId("shop"),
+    group,
+    name: String(name || "").trim(),
+    note: String(note || "").trim(),
+    unit: String(unit || "pcs").trim(),
+    status,
+    updated_at: new Date().toISOString(),
+  };
+  if (!rec.name) throw new Error("Naziv artikla je prazan.");
+  return dbPutOne(SHOP_STORE, rec);
+}
+
+export async function shoppingToggleStatus(id) {
+  const row = await dbGetOne(SHOP_STORE, id);
+  if (!row) return false;
+  const next = (row.status === "TO_BUY") ? "IN_STOCK" : "TO_BUY";
+  row.status = next;
+  row.updated_at = new Date().toISOString();
+  return dbPutOne(SHOP_STORE, row);
+}
+
+export async function shoppingDeleteItem(id) {
+  return dbDelete(SHOP_STORE, id);
+}
+
+export async function shoppingListByGroup(group) {
+  // ovo vrati sve u grupi (pa filtriraj na UI)
+  return dbGetByIndex(SHOP_STORE, "by_group", group);
+}
+
+export async function shoppingListByGroupStatus(group, status) {
+  return dbGetByIndex(SHOP_STORE, "by_group_status", [group, status]);
+}
+
+export async function shoppingCountToBuy(group) {
+  const rows = await shoppingListByGroupStatus(group, "TO_BUY");
+  return rows.length;
 }
