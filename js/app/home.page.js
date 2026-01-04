@@ -353,14 +353,14 @@ async function exportBackup() {
     }
   }
 
-  try {
-    const file = new File([blob], filename, { type: "application/json" });
-    if (navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
+  if (navigator.share) {
+    try {
+      const file = new File([blob], filename, { type: "application/json" });
       await navigator.share({ files: [file], title: "AppStanovi backup" });
       return;
+    } catch (e) {
+      console.warn("Share API failed, fallback to download:", e);
     }
-  } catch (e) {
-    console.warn("Share failed, fallback:", e);
   }
 
   const url = URL.createObjectURL(blob);

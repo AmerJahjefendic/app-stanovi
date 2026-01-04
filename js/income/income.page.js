@@ -375,7 +375,7 @@ async function handleAddIncomeItem() {
 
             // ✅ N direct/other: tretiraj kao net koji ostaje nama
             if (isN) {
-                netToUsEur = eur;
+                netToUsEur = eur - CF_EUR; // prvo oduzmi CF, pa raspodjeli
                 platformFeeEur = 0;
                 grossReservationEur = 0;
             }
