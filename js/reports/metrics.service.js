@@ -237,15 +237,20 @@ export function computePeriodReport(
 
 export function computeNOwnerReport(
   { incomeItems, nCommission },
-  { year, month }
+  { year, month, def }
 ) {
   const items = Array.isArray(incomeItems) ? incomeItems : [];
 
-  // uzmi samo N stavke koje imaju checkin/checkout
+  const aptFilter = def?.apartment || APARTMENTS.N;
+  const agencyShare = def?.agencyShare ?? 0.25;
+  const ownerShare = def?.ownerShare ?? 0.75;
+  const incomeField = def?.ownerReportIncomeField || "amount_eur";
+
+  // uzmi samo stavke koje imaju checkin/checkout za odabrani apartman
   const rows0 = items
     .filter((it) =>
       it &&
-      it.apartment === APARTMENTS.N &&
+      it.apartment === aptFilter &&
       it.checkin &&
       it.checkout
     )
@@ -254,21 +259,30 @@ export function computeNOwnerReport(
         ? (Number(it.nights) || 0)
         : nightsFromDates(it.checkin, it.checkout);
 
+      const rawIncome = Number(it?.[incomeField] ?? 0) || 0;
 
-      // Ukupan prihod (EUR) za owner report = NET nama (amount_eur) iz income_items
-      const totalIncomeEur = Number(it.amount_eur ?? 0) || 0;
+      const platform = String(it?.platform || "").toLowerCase();  // npr "direct"
+      const isDirect = platform === "direct";
 
-      // 25/75 raspodjela na amount_eur
-      const agencyCommissionEur = 0.25 * totalIncomeEur;
-      const ownerNetEur = 0.75 * totalIncomeEur;
+      // probaj naći CF u itemu (ako ga imaš), inače uzmi iz def
+      const cfFromItem =
+        Number(it?.cf_eur ?? it?.cleaning_fee_eur ?? it?.cleaningFeeEur ?? 0) || 0;
 
-      // cijena po noći po istom “ukupan prihod” iznosu
-      const pricePerNightEur = nights > 0 ? (totalIncomeEur / nights) : 0;
+      const cfDefault = Number(def?.directCleaningFeeEur ?? 0) || 0;
+      const cf = isDirect ? (cfFromItem || cfDefault) : 0;
+
+      // ✅ U izvještaju CF se NE smije vidjeti → skida se prije raspodjele
+      const reportIncome = Math.max(0, rawIncome - cf);
+
+      const agencyCommissionEur = agencyShare * reportIncome;
+      const ownerNetEur = ownerShare * reportIncome;
+
+      const pricePerNightEur = nights > 0 ? (reportIncome / nights) : 0;
 
       return {
         checkin: it.checkin,
         checkout: it.checkout,
-        totalIncomeEur: round2(totalIncomeEur),
+        totalIncomeEur: round2(reportIncome),
         nights: round2(nights),
         agencyCommissionEur: round2(agencyCommissionEur),
         ownerNetEur: round2(ownerNetEur),

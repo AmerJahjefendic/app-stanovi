@@ -8,7 +8,7 @@ import { dbGetAll } from "../db/db.js";
 import { state } from "../shared/state.js";
 import { setShareRule } from "../shared/settings.js";
 import { periodLabel } from "../shared/parseFilename.js";
-import { APARTMENT_META } from "../shared/constants.js";
+import { APARTMENT_META, APARTMENT_DEFS, APT_ROLE } from "../shared/constants.js";
 
 export function attachEvents(els, handlers) {
   const { render, handleImport, exportBackup, restoreBackupFile } = handlers;
@@ -149,7 +149,7 @@ export function attachEvents(els, handlers) {
     try {
       const m = String(state.selectedPeriodKey || "").match(/^(\d{4})-(\d{2})$/);
       if (!m) throw new Error("Nije odabran mjesec. Klikni prvo na mjesec u kalendaru.");
-      
+
       const year = Number(m[1]);
       const month = Number(m[2]);
       const data = await loadPeriodData(year, month);
@@ -157,10 +157,11 @@ export function attachEvents(els, handlers) {
       // Dinamički povlači meta podatke na osnovu odabranog apartmana
       const aptMeta = APARTMENT_META[state.aptFilter] || APARTMENT_META.N;
 
-      if (state.aptFilter === "N") {
+      const def = APARTMENT_DEFS[state.aptFilter];
+      if (def?.role === APT_ROLE.OWNER) {
         const core = computeNOwnerReport(
           { incomeItems: data.incomeItems, nCommission: data.nCommission },
-          { year, month }
+          { year, month, def: { ...def, apartment: state.aptFilter } }
         );
 
         const dto = {
@@ -173,8 +174,8 @@ export function attachEvents(els, handlers) {
           stats: core.stats,
         };
 
-        renderNOwnerReportToPrintRoot(dto, { 
-          title: `Izvještaj za vlasnika – ${getMonthLabel(month)} ${year}` 
+        renderNOwnerReportToPrintRoot(dto, {
+          title: `Izvještaj za vlasnika – ${getMonthLabel(month)} ${year}`
         });
       } else {
         const report = computePeriodReport(

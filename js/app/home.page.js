@@ -1,5 +1,5 @@
 // js/app/home.page.js
-import { renderPeriodReportToPrintRoot, printToPdf } from "../shared/pdf.js";
+import { renderPeriodReportToPrintRoot, renderNOwnerReportToPrintRoot, printToPdf } from "../shared/pdf.js";
 import { loadCategoryAliases } from "../shared/mappingConfig.js";
 await loadCategoryAliases();
 
@@ -16,8 +16,8 @@ import {
 import { keyFromPeriod, periodKeyToYM } from "../shared/utils.js";
 import { importTroskovnikXlsx } from "../shared/importXlsx.js";
 import { periodLabel } from "../shared/parseFilename.js";
-import { computePeriodReport, computeYearReport, computeRangeReport } from "../reports/metrics.service.js";
-import { APARTMENTS, APT_LIST, LS_KEYS } from "../shared/constants.js";
+import { computePeriodReport, computeYearReport, computeRangeReport, computeNOwnerReport } from "../reports/metrics.service.js";
+import { APARTMENTS, APT_LIST, LS_KEYS, APARTMENT_DEFS, APT_ROLE } from "../shared/constants.js";
 import {
   renderKPIs,
   renderIncomeTable,
@@ -155,6 +155,63 @@ function addAvgFieldsToKpi(kpi, monthsCount) {
 }
 //Kraj novo za KPI
 
+function round2(x) {
+  return Math.round((Number(x || 0) + Number.EPSILON) * 100) / 100;
+}
+
+function fmtDateISO(iso) {
+  if (!iso) return "";
+  const s = String(iso);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return s;
+  const [, y, mo, d] = m;
+  return `${d}.${mo}.${y}`;
+}
+
+function buildNOwnerDto({ year, month, incomeItems, meta, def, aptFilter }) {
+  const items = (incomeItems || []).filter(it => it?.apartment === aptFilter);
+  
+  const rows = items.map((it) => {
+    const income = Number(it?.[def.ownerReportIncomeField || "amount_eur"] || 0) || 0;
+    const nights = Number(it?.nights || 0) || 0;
+
+    const agency = income * (def.agencyShare ?? 0.25);
+    const owner = income * (def.ownerShare ?? 0.75);
+  const ppp = nights > 0 ? income / nights : 0;
+
+    return {
+      checkin: fmtDateISO(it?.checkin),
+      checkout: fmtDateISO(it?.checkout),
+      nights,
+      totalIncomeEur: round2(income),
+      agencyCommissionEur: round2(agency),
+      ownerNetEur: round2(owner),
+      pricePerNightEur: round2(ppp),
+    };
+  });
+
+  const incomeTotalEur = round2(rows.reduce((s, r) => s + (Number(r.totalIncomeEur) || 0), 0));
+  const ownerNetTotalEur = round2(rows.reduce((s, r) => s + (Number(r.ownerNetEur) || 0), 0));
+  const nightsTotal = rows.reduce((s, r) => s + (Number(r.nights) || 0), 0);
+  const reservationsCount = rows.length;
+
+  const avgStayLength = reservationsCount ? round2(nightsTotal / reservationsCount) : 0;
+  const avgPricePerNightEur = nightsTotal ? round2(incomeTotalEur / nightsTotal) : 0;
+
+  return {
+    meta: { year, monthLabel: meta?.monthLabel, propertyName: meta?.propertyName, ownerName: meta?.ownerName, agencyName: meta?.agencyName },
+    rows,
+    stats: {
+      avgStayLength,
+      avgPricePerNightEur,
+      incomeTotalEur,
+      ownerNetTotalEur,
+      reservationsCount,
+      nightsTotal,
+    }
+  };
+}
+
 async function render() {
   const imports = await refreshPeriodCalendar();
 
@@ -280,8 +337,29 @@ async function render() {
 
   // Auto-refresh print-root sa trenutnim report podacima
   const monthNames = ["Januar", "Februar", "Mart", "April", "Maj", "Juni", "Juli", "Avgust", "Septembar", "Oktobar", "Novembar", "Decembar"];
-  const printTitle = `Mjesečni izvještaj – ${monthNames[month - 1]} ${year}`;
-  renderPeriodReportToPrintRoot(report, { title: printTitle });
+  const monthLabel = monthNames[month - 1];
+
+  const def = APARTMENT_DEFS[state.aptFilter];
+
+  if (def?.role === APT_ROLE.OWNER) {
+    const core = computeNOwnerReport(
+      { incomeItems: data.incomeItems, nCommission: data.nCommission },
+      { year, month, def: { ...def, apartment: state.aptFilter } }
+    );
+
+    const ownerDto = {
+      meta: { monthLabel, year, ...def.meta },
+      rows: core.rows,
+      stats: core.stats,
+    };
+
+    renderNOwnerReportToPrintRoot(ownerDto, {
+      title: `Izvještaj za vlasnika – ${monthLabel} ${year}`,
+    });
+  } else {
+    const printTitle = `Mjesečni izvještaj – ${monthLabel} ${year}`;
+    renderPeriodReportToPrintRoot(report, { title: printTitle, aptFilter: state.aptFilter, shareRule: state.shareRule });
+  }
 }
 
 async function handleImport(file) {
