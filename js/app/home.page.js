@@ -168,50 +168,6 @@ function fmtDateISO(iso) {
   return `${d}.${mo}.${y}`;
 }
 
-function buildNOwnerDto({ year, month, incomeItems, meta, def, aptFilter }) {
-  const items = (incomeItems || []).filter(it => it?.apartment === aptFilter);
-  
-  const rows = items.map((it) => {
-    const income = Number(it?.[def.ownerReportIncomeField || "amount_eur"] || 0) || 0;
-    const nights = Number(it?.nights || 0) || 0;
-
-    const agency = income * (def.agencyShare ?? 0.25);
-    const owner = income * (def.ownerShare ?? 0.75);
-  const ppp = nights > 0 ? income / nights : 0;
-
-    return {
-      checkin: fmtDateISO(it?.checkin),
-      checkout: fmtDateISO(it?.checkout),
-      nights,
-      totalIncomeEur: round2(income),
-      agencyCommissionEur: round2(agency),
-      ownerNetEur: round2(owner),
-      pricePerNightEur: round2(ppp),
-    };
-  });
-
-  const incomeTotalEur = round2(rows.reduce((s, r) => s + (Number(r.totalIncomeEur) || 0), 0));
-  const ownerNetTotalEur = round2(rows.reduce((s, r) => s + (Number(r.ownerNetEur) || 0), 0));
-  const nightsTotal = rows.reduce((s, r) => s + (Number(r.nights) || 0), 0);
-  const reservationsCount = rows.length;
-
-  const avgStayLength = reservationsCount ? round2(nightsTotal / reservationsCount) : 0;
-  const avgPricePerNightEur = nightsTotal ? round2(incomeTotalEur / nightsTotal) : 0;
-
-  return {
-    meta: { year, monthLabel: meta?.monthLabel, propertyName: meta?.propertyName, ownerName: meta?.ownerName, agencyName: meta?.agencyName },
-    rows,
-    stats: {
-      avgStayLength,
-      avgPricePerNightEur,
-      incomeTotalEur,
-      ownerNetTotalEur,
-      reservationsCount,
-      nightsTotal,
-    }
-  };
-}
-
 async function render() {
   const imports = await refreshPeriodCalendar();
 

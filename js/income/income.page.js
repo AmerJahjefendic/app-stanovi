@@ -299,23 +299,25 @@ async function handleAddIncomeItem() {
         if (!Number.isFinite(usd) || usd <= 0) return alert("Unesi ispravan VRBO iznos (USD).");
         if (!Number.isFinite(rate) || rate <= 0) return alert("Unesi kurs USD→EUR (ili klikni ↻ Kurs).");
 
-        let payoutEur = usd * rate;
-
-        amountEur = payoutEur;        // za A/Z (ako ikad bude) ovo je prihod; za N ovo je net koji ostaje nama
+        const grossEur = usd * rate;           // ✅ konvertovani payout = GROSS u EUR
+        platformFeeEur = 0;                    // ✅ VRBO fee (u tvom modelu) 0
 
         if (isN) {
-            const gross = payoutEur;                 // GROSS u EUR (payout konvertovan)
-            const netN = gross - CF_EUR;             // ✅ NET nama za raspodjelu (bez CF)
-            if (!(Number.isFinite(netN) && netN > 0)) {
+            const poolEur = grossEur - CF_EUR;   // ✅ NET nama za raspodjelu (bez CF)
+
+            if (!(Number.isFinite(poolEur) && poolEur > 0)) {
                 return alert("NET za N mora biti > 0 (provjeri iznos/kurs).");
             }
 
-            payoutEur = netN;                        // ✅ u income_items za N čuvamo NET nama (bez CF)
-            netToUsEur = netN;                       // ✅ u n_commission ide NET nama (bez CF)
-            platformFeeEur = 0;                      // VRBO fee nemamo (0)
-            grossReservationEur = 0;                 // nemamo reservation gross, imamo payout
-        }
+            amountEur = poolEur;                // ✅ income_items.amount_eur (bez CF) -> ide u owner PDF
+            netToUsEur = poolEur;               // ✅ n_commission baziraj na pool-u (bez CF)
 
+            grossReservationEur = grossEur;     // ✅ income_items.gross_eur = konvertovani payout
+        } else {
+            // A/Z: VRBO tretiraj kao normalan prihod (nema CF logike)
+            amountEur = grossEur;
+            grossReservationEur = grossEur;     // opcionalno, ali korisno da gross_eur nije null
+        }
     }
 
     // --- BOOKING (svima: NET = gross - fee) ---
@@ -369,6 +371,7 @@ async function handleAddIncomeItem() {
             amountEur = payoutNetToUs;
             netToUsEur = payoutNetToUs;
         }
+
         else {
             // ✅ A/Z Airbnb/direct/other: unos = kompletan prihod
             amountEur = eur;
@@ -424,8 +427,8 @@ async function handleAddIncomeItem() {
         amount_eur: round2(amountEur),
 
         // Future/debug fields (ne traže DB migraciju)
-        gross_eur: (platform === "booking" || (platform === "airbnb" && isN)) ? round2(grossReservationEur) : null,
-        platform_fee_eur: (platform === "booking" || (platform === "airbnb" && isN)) ? round2(platformFeeEur) : null,
+        gross_eur: Number.isFinite(grossReservationEur) ? round2(grossReservationEur) : null,
+        platform_fee_eur: Number.isFinite(platformFeeEur) ? round2(platformFeeEur) : null,
 
         // VRBO FX info
         currency: platform === "vrbo" ? "USD" : "EUR",
