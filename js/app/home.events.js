@@ -4,7 +4,7 @@ import { showPop, hidePops, setPickerLabel } from "./home.ui.js";
 import { loadPeriodData } from "./home.data.js";
 import { computePeriodReport, computeNOwnerReport } from "../reports/metrics.service.js";
 import { renderPeriodReportToPrintRoot, renderNOwnerReportToPrintRoot, printToPdf } from "../shared/pdf.js";
-import { dbGetAll } from "../db/db.js";
+import { dbGetAll, dbDeleteByIndex } from "../db/db.js";
 import { state } from "../shared/state.js";
 import { setShareRule } from "../shared/settings.js";
 import { periodLabel } from "../shared/parseFilename.js";
