@@ -11,6 +11,7 @@ import {
   dbPutOne,
   dbPutMany,
   shoppingCountToBuy,
+  dbDeleteByIndex,
 } from "../db/db.js";
 
 import { keyFromPeriod, periodKeyToYM } from "../shared/utils.js";
