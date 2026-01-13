@@ -505,6 +505,23 @@ td.right {
 .calPop .monthCell.is-imported{ background: rgba(0,200,120,.12); border:1px solid rgba(0,200,120,.25); }
 .calPop .monthCell.is-missing { background: rgba(220,60,60,.10);  border:1px solid rgba(220,60,60,.25); }
 
+@media (max-width: 900px) {
+  .content {
+    padding: 12px;
+  }
+
+  .tableWrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid rgba(255,255,255,.06);
+    border-radius: 12px;
+  }
+
+  .tableWrap table {
+    min-width: 760px;
+  }
+}
+
 .is-hidden { display: none !important; }
 .modal.is-hidden { display: none !important; }
 
@@ -624,4 +641,27 @@ td.right {
   .mobileMenuBody { display: grid; gap: 10px; }
 
   .btn.full { width: 100%; justify-content: center; }
+}
+
+@media (max-width: 520px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .topbar .brand {
+    min-width: 180px;
+  }
+
+  .topbar .actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .topbar .actions .btn {
+    white-space: nowrap;
+    padding: 8px 10px;
+    border-radius: 10px;
+  }
 }

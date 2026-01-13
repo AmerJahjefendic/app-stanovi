@@ -46,6 +46,7 @@ const els = {
 
 let _groups = [];
 let _groupMap = {};
+let _lastFocusEl = null;
 
 function normId(v) {
     return String(v || "").trim();
@@ -96,11 +97,18 @@ function resetForm() {
 }
 
 function openModal() {
+    _lastFocusEl = document.activeElement;   // ko je otvorio modal (Add/Edit)
     els.modal.classList.remove("is-hidden");
     els.modal.setAttribute("aria-hidden", "false");
+
+    // fokus na prvo polje u modalu
+    setTimeout(() => els.id?.focus(), 0);
 }
 
 function closeModal() {
+    // vrati fokus VAN modala prije aria-hidden
+    try { _lastFocusEl?.focus?.(); } catch {}
+
     els.modal.classList.add("is-hidden");
     els.modal.setAttribute("aria-hidden", "true");
 }

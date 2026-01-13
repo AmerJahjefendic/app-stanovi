@@ -35,10 +35,10 @@ export function renderApartmentsTable(tbody, rows, groupMap, handlers) {
             <td>${escapeHtml(r.ownerName || "")}</td>
             <td>${r.agencyPct === null || r.agencyPct === undefined ? "" : Number(r.agencyPct)}</td>
             <td>${r.isActive === false ? "Ne" : "Da"}</td>
-            <td class="actions"></td>
+            <td class="rowActions"></td>
         `;
 
-        const actions = tr.querySelector(".actions");
+        const actions = tr.querySelector(".rowActions");
 
         const btnEdit = document.createElement("button");
         btnEdit.className = "btn";
