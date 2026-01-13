@@ -1,6 +1,16 @@
 // js/db.js
 const DB_NAME = "appstanovi_db";
-const DB_VER = 8;
+const DB_VER = 11;
+
+// helper: create store if missing
+function ensureStore(db, name, opts, indexDefs = []) {
+  if (!db.objectStoreNames.contains(name)) {
+    const store = db.createObjectStore(name, opts);
+    for (const idx of indexDefs) {
+      store.createIndex(idx.name, idx.keyPath, idx.options || {});
+    }
+  }
+}
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -64,6 +74,138 @@ function openDB() {
         // Opcionalno za sortiranje po zadnjoj izmjeni
         s.createIndex("by_updated_at", "updated_at", { unique: false });
       }
+
+      // ===== NEW STORES (multi-apartment support) =====
+
+      // 1) meta store (schemaVersion)
+      ensureStore(db, "meta", { keyPath: "key" });
+
+      // 2) groups
+      ensureStore(db, "groups", { keyPath: "id" });
+
+      // 3) apartments
+      ensureStore(
+        db,
+        "apartments",
+        { keyPath: "id" },
+        [
+          { name: "groupId", keyPath: "groupId", options: { unique: false } },
+          { name: "ownerType", keyPath: "ownerType", options: { unique: false } },
+          { name: "isActive", keyPath: "isActive", options: { unique: false } },
+          { name: "sort", keyPath: "sort", options: { unique: false } },
+          { name: "agencyPct", keyPath: "agencyPct", options: { unique: false } },
+        ]
+      );
+
+      // 4) commission_rules (za kasnije)
+      ensureStore(
+        db,
+        "commission_rules",
+        { keyPath: "id" },
+        [
+          { name: "groupId", keyPath: "groupId", options: { unique: false } },
+          { name: "apartmentId", keyPath: "apartmentId", options: { unique: false } },
+          { name: "platform", keyPath: "platform", options: { unique: false } },
+        ]
+      );
+
+      // ===== SEED DEFAULTS (safe, only if empty/missing) =====
+      // NOTE: onupgradeneeded runs inside a versionchange transaction
+      const t = req.transaction;
+
+      function putIfMissing(storeName, key, obj) {
+        const s = t.objectStore(storeName);
+        const getReq = s.get(key);
+        getReq.onsuccess = () => {
+          if (!getReq.result) s.put(obj);
+        };
+      }
+
+      function seedIfEmpty(storeName, rows) {
+        const s = t.objectStore(storeName);
+        const cReq = s.count();
+        cReq.onsuccess = () => {
+          const n = cReq.result || 0;
+          if (n === 0) {
+            for (const r of rows) s.put(r);
+          }
+        };
+      }
+
+      // 1) META: schemaVersion
+      putIfMissing("meta", "schemaVersion", { key: "schemaVersion", value: 1 });
+
+      // 2) GROUPS
+      function ensureSystemGroup(id, name, type) {
+        const s = t.objectStore("groups");
+        const gReq = s.get(id);
+        gReq.onsuccess = () => {
+          const cur = gReq.result;
+
+          // Ako ne postoji -> kreiraj
+          if (!cur) {
+            s.put({ id, name, type, isSystem: true, updatedAt: new Date().toISOString() });
+            return;
+          }
+
+          // Ako postoji -> updejtuj samo system polja (name/type/isSystem)
+          // (Ovo je "DA" koje si tražio: automatski preimenuje na nove nazive.)
+          const next = {
+            ...cur,
+            id,
+            name,
+            type,
+            isSystem: true,
+            updatedAt: new Date().toISOString(),
+          };
+          s.put(next);
+        };
+      }
+
+      ensureSystemGroup("AZ", "Shared (moji – A+Z)", "OWNED_SHARED");
+      ensureSystemGroup("O",  "Solo (moji)",         "OWNED_SOLO");
+      ensureSystemGroup("N",  "Managed (tuđi)",      "MANAGED");
+
+      // 3) APARTMENTS (A/Z OWNED, N MANAGED with 25%)
+      const now = new Date().toISOString();
+      seedIfEmpty("apartments", [
+        {
+          id: "A",
+          name: "A",
+          groupId: "AZ",
+          ownerType: "OWNED",
+          agencyPct: null, // OWNED => null
+          isActive: true,
+          sort: 10,
+          legacyCode: "A",
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "Z",
+          name: "Z",
+          groupId: "AZ",
+          ownerType: "OWNED",
+          agencyPct: null,
+          isActive: true,
+          sort: 20,
+          legacyCode: "Z",
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "N",
+          name: "N",
+          groupId: "N",
+          ownerType: "MANAGED",
+          agencyPct: 25, // MANAGED => required, default 25
+          isActive: true,
+          sort: 30,
+          legacyCode: "N",
+          createdAt: now,
+          updatedAt: now,
+        },
+      ]);
     };
 
     req.onblocked = () => {

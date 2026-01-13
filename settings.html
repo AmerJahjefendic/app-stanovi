@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="bs">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AppStanovi – Settings</title>
+
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="css/print.css" media="print" />
+</head>
+
+<body>
+    <div class="app">
+
+        <header class="topbar">
+            <div class="brand">
+                <div class="logo">🏠</div>
+                <div>
+                    <div class="title">AppStanovi</div>
+                    <div class="subtitle">Settings</div>
+                </div>
+            </div>
+
+            <div class="topbar-right">
+                <a class="btn keepVisible" href="income.html">Prihodi</a>
+                <a class="btn keepVisible" href="expenses.html">Troškovi</a>
+                <a class="btn secondary keepVisible" href="index.html">← Nazad</a>
+            </div>
+        </header>
+
+        <main class="page">
+            <section class="card">
+                <div class="card-header">
+                    <h2>Apartmani</h2>
+                    <p class="muted">Dodaj / uredi apartmane. Za <b>MANAGED</b> je obavezan <b>agencijska provizija</b>.
+                    </p>
+                </div>
+
+                <div id="msgBox" class="msg" style="display:none;"></div>
+
+                <div class="row" style="gap:10px; align-items:center; margin:10px 0;">
+                    <button id="btnOpenAptModal" class="btn">+ Dodaj apartman</button>
+                </div>
+
+                <div class="table-wrap">
+                    <table class="table" id="aptTable">
+                        <thead>
+                            <tr>
+                                <th>Grupa</th>
+                                <th>Tip</th>
+                                <th>Apartman</th>
+                                <th>Adresa</th>                             
+                                <th>Vlasnik</th>
+                                <th>Agencijska provizija</th>
+                                <th>Aktivan</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="aptTbody"></tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+
+    </div>
+    <div id="aptModal" class="modal is-hidden" aria-hidden="true">
+        <div class="modalBackdrop" data-modal-close></div>
+
+        <div class="modalCard" role="dialog" aria-modal="true" aria-labelledby="aptModalTitle">
+            <div class="modalHeader">
+                <div class="modalTitle" id="aptModalTitle">Apartman</div>
+                <button class="btn secondary" type="button" data-modal-close>✕</button>
+            </div>
+
+            <div class="modalBody">
+                <div class="field">
+                    <label>ID (npr. A, Z, N, B1)</label>
+                    <input id="aptId" type="text" autocomplete="off" />
+                    <small class="note">ID se ne može mijenjati nakon kreiranja.</small>
+                </div>
+
+                <div class="field">
+                    <label>Naziv</label>
+                    <input id="aptName" type="text" autocomplete="off" />
+                </div>
+
+                <div class="field">
+                    <label>Adresa apartmana (za izvještaje)</label>
+                    <input id="aptAddress" type="text" autocomplete="off" />
+                </div>
+
+                <div class="row" style="gap:10px;">
+                    <div class="field" style="flex:1; min-width:220px;">
+                        <label>Grupa</label>
+                        <select id="aptGroup"></select>
+                    </div>
+
+                    <div class="field" style="flex:1; min-width:220px;">
+                        <label>Owner type</label>
+                        <select id="aptOwnerType">
+                            <option value="OWNED">OWNED</option>
+                            <option value="MANAGED">MANAGED</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="agencyRow" class="card is-hidden" style="margin-top:10px;">
+                    <div class="row" style="gap:10px;">
+                        <div class="field" style="flex:1; min-width:220px;">
+                            <label>Agencijska provizija (%)</label>
+                            <input id="aptAgencyPct" type="number" step="0.01" min="0" max="100" />
+                        </div>
+
+                        <div class="field" style="flex:1; min-width:220px;">
+                            <label>Ime vlasnika (samo MANAGED)</label>
+                            <input id="aptOwnerName" type="text" autocomplete="off" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row" style="gap:10px; margin-top:10px;">
+                    <div class="field" style="flex:1; min-width:220px;">
+                        <label>Sort (redoslijed prikaza)</label>
+                        <input id="aptSort" type="number" step="1" />
+                    </div>
+
+                    <div class="field" style="flex:1; min-width:220px; display:flex; align-items:end;">
+                        <label style="display:flex; gap:10px; align-items:center; margin:0;">
+                            <input id="aptIsActive" type="checkbox" checked />
+                            Aktivan
+                        </label>
+                    </div>
+                </div>
+
+                <input id="aptEditMode" type="hidden" value="create" />
+            </div>
+
+            <div class="modalFooter">
+                <button id="btnSaveApt" class="btn" type="button">Sačuvaj</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/settings/settings.page.js"></script>
+</body>
+
+</html>
