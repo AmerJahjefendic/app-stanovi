@@ -12,13 +12,14 @@ import {
     OWNER_TYPE,
 } from "../shared/apartments.service.js";
 
+import { GROUP_IDS, ALLOWED_NEW_GROUPS } from "../shared/constants.js";
+import { cleanStr } from "../shared/utils.js";
+
 import { dbGetAll } from "../db/db.js";
 
 import {
     setMsg,
-    renderGroupsSelect,
     renderApartmentsTable,
-    showAgencyRow,
 } from "./settings.ui.js";
 
 const els = {
@@ -59,17 +60,12 @@ const els = {
 
 let _groups = [];
 let _groupMap = {};
-let _shareSets = [];
+let _shareSetsCache = null;
 let _lastFocusEl = null;
 let _lastFocusElShare = null;
 
 function normId(v) {
     return String(v || "").trim();
-}
-
-function cleanStr(x) {
-    const s = String(x ?? "").trim();
-    return s ? s : "";
 }
 
 function showAptFormError(msg) {
@@ -95,23 +91,47 @@ function slugify(s) {
         .replace(/^_+|_+$/g, "");
 }
 
+/**
+ * Pronalazi grupu po ID-u iz cache-a
+ * @param {string} id - ID grupe (npr. "AZ", "O", "N")
+ * @returns {Object|null} Objekat grupe ili null ako ne postoji
+ */
 function groupById(id) {
     return (_groups || []).find(g => g.id === id) || null;
 }
 
+/**
+ * Provjerava da li je grupa tipa "Shared" (OWNED_SHARED)
+ * @param {string} groupId - ID grupe
+ * @returns {boolean} true ako je grupa Shared
+ */
 function isOwnedSharedGroupId(groupId) {
     return groupById(groupId)?.type === "OWNED_SHARED";
 }
 
+/**
+ * Provjerava da li je ownerType MANAGED
+ * @param {string} ownerType - Tip vlasništva
+ * @returns {boolean} true ako je MANAGED
+ */
 function isManagedOwnerType(ownerType) {
     return String(ownerType || "").toUpperCase() === "MANAGED";
 }
 
+/**
+ * Prikazuje ili sakriva agencijsku proviziju u zavisnosti od ownerType
+ */
 function applyAgencyUI() {
     const managed = isManagedOwnerType(els.aptOwnerType.value);
     els.agencyRow?.classList.toggle("is-hidden", !managed);
 }
 
+/**
+ * Generiše jedinstven ID za share set
+ * @param {string} prefix - Prefiks za ID (default: "SS")
+ * @returns {Promise<string>} Jedinstven ID
+ * @throws {Error} Ako ne može generisati ID nakon više pokušaja
+ */
 async function makeUniqueShareId(prefix = "SS") {
     // First try with prefix as-is
     let exists = await shareSetsGet(prefix);
@@ -134,6 +154,10 @@ async function makeUniqueShareId(prefix = "SS") {
     throw new Error("Ne mogu generisati jedinstven ID. Pokušaj ponovo.");
 }
 
+/**
+ * Prikazuje ili sakriva share set dropdown u zavisnosti od tipa grupe.
+ * Share set se prikazuje samo za "Shared" grupe (OWNED_SHARED).
+ */
 function applyShareUI() {
     const groupId = els.aptGroup.value;
     const show = isOwnedSharedGroupId(groupId);
@@ -146,6 +170,12 @@ function applyShareUI() {
     }
 }
 
+/**
+ * Vraća kratku oznaku grupe za prikaz u UI
+ * @param {string} id - ID grupe
+ * @param {Object} g - Objekat grupe iz DB
+ * @returns {string} Kratka oznaka (npr. "Shared", "Solo", "Managed (legacy)")
+ */
 function groupShortLabel(id, g) {
     // id je keyPath; g je record iz DB
     const type = g?.type;
@@ -158,11 +188,17 @@ function groupShortLabel(id, g) {
     return g?.name || id;
 }
 
+/**
+ * Rebuilds group dropdown options dinamički.
+ * Uvijek prikazuje Shared (AZ) i Solo (O).
+ * Legacy Managed (N) prikazuje samo u edit modu kada je trenutni groupId = "N".
+ * @param {string} currentGroupId - Trenutni ID grupe (default: "O")
+ */
 function rebuildAptGroupOptions(currentGroupId) {
     const cur = String(currentGroupId || "").trim() || "O";
 
-    const allowed = ["AZ", "O"]; // ✅ uvijek ove dvije
-    const includeLegacyN = (cur === "N"); // ✅ samo kad editujemo N
+    const allowed = ALLOWED_NEW_GROUPS; // ✅ uvijek ove dvije
+    const includeLegacyN = (cur === GROUP_IDS.MANAGED_LEGACY); // ✅ samo kad editujemo N
 
     els.aptGroup.innerHTML = "";
 
@@ -176,9 +212,9 @@ function rebuildAptGroupOptions(currentGroupId) {
     }
 
     if (includeLegacyN) {
-        const g = groupById("N");
+        const g = groupById(GROUP_IDS.MANAGED_LEGACY);
         const opt = document.createElement("option");
-        opt.value = "N";
+        opt.value = GROUP_IDS.MANAGED_LEGACY;
         opt.textContent = groupShortLabel("N", g);
         els.aptGroup.appendChild(opt);
     }
@@ -278,9 +314,16 @@ function attachShareModalCloseHandlers() {
     });
 }
 
-async function loadShareSets() {
-    _shareSets = await dbGetAll("share_sets");
-    _shareSets.sort((a,b) => (a.sort||0) - (b.sort||0) || String(a.name||"").localeCompare(String(b.name||"")));
+/**
+ * Učitava share sets iz DB sa cachingom.
+ * @param {boolean} forceRefresh - Ako je true, forsira reload iz DB (default: false)
+ * @returns {Promise<Array>} Sortirani array share setova
+ */
+async function loadShareSets(forceRefresh = false) {
+    if (!forceRefresh && _shareSetsCache) return _shareSetsCache;
+    _shareSetsCache = await dbGetAll("share_sets");
+    _shareSetsCache.sort((a,b) => (a.sort||0) - (b.sort||0) || String(a.name||"").localeCompare(String(b.name||"")));
+    return _shareSetsCache;
 }
 
 function renderShareSetsDropdown(currentShareKey = "") {
@@ -289,7 +332,7 @@ function renderShareSetsDropdown(currentShareKey = "") {
     const currentKey = cleanStr(currentShareKey);
     
     // Only active share sets
-    const active = _shareSets.filter(s => s.isActive !== false);
+    const active = (_shareSetsCache || []).filter(s => s.isActive !== false);
     
     // Build options
     let options = [
@@ -491,7 +534,7 @@ async function handleSaveShareSet() {
         const id = await makeUniqueShareId(base);
 
         // Calculate sort dynamically
-        const maxSort = _shareSets.reduce((m, s) => Math.max(m, Number(s.sort)||0), 0);
+        const maxSort = (_shareSetsCache || []).reduce((m, s) => Math.max(m, Number(s.sort)||0), 0);
         const sort = maxSort + 10;
 
         // Use service function instead of direct dbPutOne
@@ -503,7 +546,7 @@ async function handleSaveShareSet() {
             sort
         });
 
-        await loadShareSets();
+        await loadShareSets(true);
         
         // Re-render dropdown with newly created share set
         renderShareSetsDropdown(id);

@@ -1,5 +1,6 @@
 // js/shared/apartments.service.js
 import { dbGetAll, dbGetOne, dbPutOne, dbDelete, dbGetByIndex } from "../db/db.js";
+import { cleanStr } from "./utils.js";
 
 export const OWNER_TYPE = {
     OWNED: "OWNED",
@@ -23,11 +24,6 @@ function _normPct(v) {
     if (v === "" || v === null || v === undefined) return null;
     const n = Number(v);
     return Number.isFinite(n) ? n : NaN;
-}
-
-function cleanStr(x) {
-    const s = String(x ?? "").trim();
-    return s ? s : "";
 }
 
 export async function apartmentsListAll() {
@@ -60,8 +56,16 @@ export async function groupsExists(groupId) {
 }
 
 /**
- * Validacija: obavezna polja + MANAGED zahtijeva agencyPct (0-100)
- * Ne mijenja DB.
+ * Validira input za kreiranje/ažuriranje apartmana.
+ * Obavezna polja: id (osim update), name, groupId, ownerType.
+ * MANAGED apartmani zahtijevaju agencyPct (0-100) i ownerName.
+ * OWNED_SHARED grupe zahtijevaju shareKey.
+ * 
+ * @param {Object} input - Input objekat sa poljima apartmana
+ * @param {Object} options - Opcije validacije
+ * @param {boolean} options.allowUpdate - Ako je true, id nije obavezan (default: false)
+ * @returns {Promise<Object>} Normalizovan i validiran objekat apartmana
+ * @throws {Error} Ako validacija ne prođe
  */
 export async function validateApartmentInput(input, { allowUpdate = false } = {}) {
     const id = _trim(input?.id);
@@ -142,7 +146,13 @@ export async function validateApartmentInput(input, { allowUpdate = false } = {}
 }
 
 /**
- * Kreira novi apartman. Ne dira postojeće podatke.
+ * Kreira novi apartman u bazi.
+ * Validira input i vraća greške ako validacija ne prođe.
+ * Postavlja createdAt i updatedAt timestampove.
+ * 
+ * @param {Object} input - Input objekat sa poljima apartmana
+ * @returns {Promise<Object>} Kreirani apartman objekat
+ * @throws {Error} Ako apartman sa datim ID-om već postoji ili validacija ne prođe
  */
 export async function apartmentsCreate(input) {
     const clean = await validateApartmentInput(input, { allowUpdate: false });

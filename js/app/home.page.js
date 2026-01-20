@@ -12,6 +12,7 @@ import {
   dbPutMany,
   shoppingCountToBuy,
   dbDeleteByIndex,
+  DB_VER,
 } from "../db/db.js";
 
 import { keyFromPeriod, periodKeyToYM } from "../shared/utils.js";
@@ -367,7 +368,12 @@ async function exportBackup() {
   const nowIso = new Date().toISOString();
 
   const data = {
-    meta: { app: "AppStanovi", version: "1.0", exported_at: nowIso },
+    meta: { 
+      app: "AppStanovi", 
+      version: "1.0", 
+      schema_version: DB_VER,
+      exported_at: nowIso 
+    },
 
     // ✅ NEW (dynamic config)
     apartments: await safeGetAll("apartments"),

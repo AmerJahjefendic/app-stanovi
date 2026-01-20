@@ -1,8 +1,8 @@
 // js/shared/constants.js
 
 export const APT_ROLE = {
-  OWNED: "OWNED",     // tvoji stanovi (A, Z...) - shared logika
-  OWNER: "OWNER",     // stanovi gdje praviš izvještaj za vlasnika (N, N2...)
+  OWNED: "OWNED",     // moji stanovi (A, Z...) - shared logika
+  OWNER: "OWNER",     // stanovi gdje pravim izvještaj za vlasnika (N, N2...)
 };
 
 export const APARTMENTS = {
@@ -30,6 +30,14 @@ export const FX = {
   FX_KEY: "fxRateBamPerEur",
   DEFAULT_EUR_TO_BAM: 1.95583,
 };
+
+export const GROUP_IDS = {
+  SHARED: "AZ",
+  SOLO: "O",
+  MANAGED_LEGACY: "N",
+};
+
+export const ALLOWED_NEW_GROUPS = [GROUP_IDS.SHARED, GROUP_IDS.SOLO];
 
 export const LS_KEYS = {
   shareRule: "appstanovi_shareRule",

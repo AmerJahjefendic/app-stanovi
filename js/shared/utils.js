@@ -26,6 +26,12 @@ export function safeDate(x) {
   return Number.isFinite(d.getTime()) ? d : null;
 }
 
+// Čisti i trimuje string, vraća "" ako je prazan
+export function cleanStr(x) {
+  const s = String(x ?? "").trim();
+  return s ? s : "";
+}
+
 export function fmtEUR(x, options = {}) {
   if (options.dashIfNull && (x === null || x === undefined)) return "—";
   return new Intl.NumberFormat("bs-BA", { style: "currency", currency: "EUR" }).format(Number(x || 0));

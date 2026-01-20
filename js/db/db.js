@@ -1,6 +1,6 @@
 // js/db.js
 const DB_NAME = "appstanovi_db";
-const DB_VER = 13;
+export const DB_VER = 13;
 
 // helper: create store if missing
 function ensureStore(db, name, opts, indexDefs = []) {
@@ -297,8 +297,17 @@ function openDB() {
 // ===== POST-UPGRADE MIGRATIONS =====
 // Migrations that run after DB is opened (not in onupgradeneeded transaction)
 async function runPostUpgradeMigrations(db) {
-  await patchShareSetsTimestamps(db);
-  await patchSystemGroupNames();
+  try { 
+    await patchShareSetsTimestamps(db); 
+  } catch (e) { 
+    console.error("[migration] patchShareSetsTimestamps failed", e); 
+  }
+
+  try { 
+    await patchSystemGroupNames(); 
+  } catch (e) { 
+    console.error("[migration] patchSystemGroupNames failed", e); 
+  }
 }
 
 async function patchSystemGroupNames() {
