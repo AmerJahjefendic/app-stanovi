@@ -33,7 +33,7 @@
             <section class="card">
                 <div class="card-header">
                     <h2>Apartmani</h2>
-                    <p class="muted">Dodaj / uredi apartmane. Za <b>MANAGED</b> je obavezan <b>agencijska provizija</b>.
+                    <p class="muted">Dodaj / uredi apartmane. Za <b>MANAGED</b> je obavezna <b>agencijska provizija</b>.
                     </p>
                 </div>
 
@@ -90,19 +90,29 @@
                     <input id="aptAddress" type="text" autocomplete="off" />
                 </div>
 
-                <div class="row" style="gap:10px;">
-                    <div class="field" style="flex:1; min-width:220px;">
-                        <label>Grupa</label>
-                        <select id="aptGroup"></select>
-                    </div>
-
-                    <div class="field" style="flex:1; min-width:220px;">
+                <div class="field" style="flex:1; min-width:220px;">
                         <label>Owner type</label>
                         <select id="aptOwnerType">
                             <option value="OWNED">OWNED</option>
                             <option value="MANAGED">MANAGED</option>
                         </select>
                     </div>
+
+                <div class="row" style="gap:10px;">
+                    <div class="field" style="flex:1; min-width:220px;">
+                        <label>Grupa</label>
+                        <select id="aptGroup"></select>
+                    </div>
+
+                </div>
+
+                <div id="shareSetWrap" class="field is-hidden">
+                    <label>Shared set (dijeljeni troškovi)</label>
+                    <div class="row" style="gap:8px; align-items:center;">
+                        <select id="aptShareKey" style="flex:1;"></select>
+                        <button id="btnNewShareSet" class="btn secondary" type="button">+ Novi</button>
+                    </div>
+                    <small class="note">Apartmani u istom shared set-u dijele samo svoje zajedničke troškove.</small>
                 </div>
 
                 <div id="agencyRow" class="card is-hidden" style="margin-top:10px;">
@@ -137,7 +147,35 @@
             </div>
 
             <div class="modalFooter">
+                <div id="aptFormError" class="formError hidden"></div>
                 <button id="btnSaveApt" class="btn" type="button">Sačuvaj</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="shareSetModal" class="modal is-hidden" aria-hidden="true">
+        <div class="modalBackdrop" data-modal-close-share></div>
+
+        <div class="modalCard" role="dialog" aria-modal="true" aria-labelledby="shareSetModalTitle">
+            <div class="modalHeader">
+                <div class="modalTitle" id="shareSetModalTitle">Novi shared set</div>
+                <button class="btn secondary" type="button" data-modal-close-share>✕</button>
+            </div>
+
+            <div class="modalBody">
+                <div class="field">
+                    <label>Naziv</label>
+                    <input id="shareSetName" type="text" placeholder="npr. Gajev trg 2" />
+                </div>
+
+                <div class="field">
+                    <label>Adresa</label>
+                    <input id="shareSetAddress" type="text" placeholder="npr. Gajev trg 2, Sarajevo" />
+                </div>
+            </div>
+
+            <div class="modalFooter">
+                <button id="btnSaveShareSet" class="btn" type="button">Sačuvaj</button>
             </div>
         </div>
     </div>

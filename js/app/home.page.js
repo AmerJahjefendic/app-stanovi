@@ -358,17 +358,38 @@ async function handleImport(file) {
   await render();
 }
 
+async function safeGetAll(store) {
+  try { return await dbGetAll(store); }
+  catch { return []; }
+}
+
 async function exportBackup() {
+  const nowIso = new Date().toISOString();
+
   const data = {
-    meta: { app: "AppStanovi", version: "1.0", exported_at: new Date().toISOString() },
-    imports: await dbGetAll("imports"),
-    income_monthly: await dbGetAll("income_monthly"),
-    income_items: await dbGetAll("income_items").catch(() => []),
-    expenses: await dbGetAll("expenses"),
-    n_commission: await dbGetAll("n_commission"),
+    meta: { app: "AppStanovi", version: "1.0", exported_at: nowIso },
+
+    // ✅ NEW (dynamic config)
+    apartments: await safeGetAll("apartments"),
+    groups: await safeGetAll("groups"),
+    share_sets: await safeGetAll("share_sets"),
+    commission_rules: await safeGetAll("commission_rules"),
+    settings_meta: await safeGetAll("meta"), 
+
+    // ✅ NEW 
+    income: await safeGetAll("income"),
+    expenses_v2: await safeGetAll("expenses"), 
+    shopping_items: await safeGetAll("shopping_items"),
+
+    // ✅ LEGACY 
+    imports: await safeGetAll("imports"),
+    income_monthly: await safeGetAll("income_monthly"),
+    income_items: await safeGetAll("income_items"),
+    expenses: await safeGetAll("expenses"),
+    n_commission: await safeGetAll("n_commission"),
   };
 
-  const filename = `appstanovi-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  const filename = `appstanovi-backup-${nowIso.slice(0, 10)}.json`;
   const jsonText = JSON.stringify(data, null, 2);
   const blob = new Blob([jsonText], { type: "application/json" });
 
@@ -406,6 +427,11 @@ async function exportBackup() {
   URL.revokeObjectURL(url);
 }
 
+async function safePutMany(store, rows) {
+  if (!Array.isArray(rows) || !rows.length) return;
+  try { await dbPutMany(store, rows); } catch {}
+}
+
 async function restoreBackupFile(file) {
   const text = await file.text();
   const data = JSON.parse(text);
@@ -414,8 +440,19 @@ async function restoreBackupFile(file) {
     throw new Error("Ovo nije validan AppStanovi backup fajl.");
   }
 
-  const ok = confirm("Restore će DODATI/PREPIŠE podatke iz backupa. Nastaviti?");
+  const ok = confirm("Restore će DODATI/PREPISATI podatke iz backupa. Nastaviti?");
   if (!ok) return;
+
+  // ✅ RESTORE CONFIG FIRST (dynamic apartments)
+  await safePutMany("meta", data.settings_meta);           // meta store
+  await safePutMany("groups", data.groups);
+  await safePutMany("share_sets", data.share_sets);
+  await safePutMany("apartments", data.apartments);
+  await safePutMany("commission_rules", data.commission_rules);
+
+  // ✅ RESTORE NEW DATA (if present)
+  await safePutMany("income", data.income);
+  await safePutMany("shopping_items", data.shopping_items);
 
   const periods = new Set((data.imports || []).map(i => `${i.year}-${i.month}`));
   for (const key of periods) {

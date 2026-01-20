@@ -1,6 +1,6 @@
 // js/db.js
 const DB_NAME = "appstanovi_db";
-const DB_VER = 11;
+const DB_VER = 13;
 
 // helper: create store if missing
 function ensureStore(db, name, opts, indexDefs = []) {
@@ -94,8 +94,17 @@ function openDB() {
           { name: "isActive", keyPath: "isActive", options: { unique: false } },
           { name: "sort", keyPath: "sort", options: { unique: false } },
           { name: "agencyPct", keyPath: "agencyPct", options: { unique: false } },
+          { name: "shareKey", keyPath: "shareKey", options: { unique: false } },
         ]
       );
+
+      // Dodaj shareKey index ako store već postoji (upgrade scenario)
+      if (db.objectStoreNames.contains("apartments")) {
+        const apt = req.transaction.objectStore("apartments");
+        if (!apt.indexNames.contains("shareKey")) {
+          apt.createIndex("shareKey", "shareKey", { unique: false });
+        }
+      }
 
       // 4) commission_rules (za kasnije)
       ensureStore(
@@ -106,6 +115,17 @@ function openDB() {
           { name: "groupId", keyPath: "groupId", options: { unique: false } },
           { name: "apartmentId", keyPath: "apartmentId", options: { unique: false } },
           { name: "platform", keyPath: "platform", options: { unique: false } },
+        ]
+      );
+
+      // 5) share_sets (shared clusters)
+      ensureStore(
+        db,
+        "share_sets",
+        { keyPath: "id" },
+        [
+          { name: "isActive", keyPath: "isActive", options: { unique: false } },
+          { name: "sort", keyPath: "sort", options: { unique: false } },
         ]
       );
 
@@ -162,12 +182,23 @@ function openDB() {
         };
       }
 
-      ensureSystemGroup("AZ", "Shared (moji – A+Z)", "OWNED_SHARED");
-      ensureSystemGroup("O",  "Solo (moji)",         "OWNED_SOLO");
-      ensureSystemGroup("N",  "Managed (tuđi)",      "MANAGED");
+      ensureSystemGroup("AZ", "Shared", "OWNED_SHARED");
+      ensureSystemGroup("O",  "Solo", "OWNED_SOLO");
+      ensureSystemGroup("N",  "Managed", "MANAGED");
 
-      // 3) APARTMENTS (A/Z OWNED, N MANAGED with 25%)
+      // 3) SHARE_SETS (prvo kreiraj share set)
       const now = new Date().toISOString();
+      putIfMissing("share_sets", "NIZE_BANJE_2", {
+        id: "NIZE_BANJE_2",
+        name: "Niže banje 2",
+        address: "Niže banje 2",
+        isActive: true,
+        sort: 10,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // 4) APARTMENTS (A/Z OWNED, N MANAGED with 25%)
       seedIfEmpty("apartments", [
         {
           id: "A",
@@ -178,6 +209,7 @@ function openDB() {
           isActive: true,
           sort: 10,
           legacyCode: "A",
+          shareKey: "NIZE_BANJE_2",
           createdAt: now,
           updatedAt: now,
         },
@@ -190,6 +222,7 @@ function openDB() {
           isActive: true,
           sort: 20,
           legacyCode: "Z",
+          shareKey: "NIZE_BANJE_2",
           createdAt: now,
           updatedAt: now,
         },
@@ -202,10 +235,38 @@ function openDB() {
           isActive: true,
           sort: 30,
           legacyCode: "N",
+          shareKey: null,
           createdAt: now,
           updatedAt: now,
         },
       ]);
+
+      // ===== MIGRATION: Patch existing apartments =====
+      function patchApartment(id, patchFn) {
+        const s = t.objectStore("apartments");
+        const r = s.get(id);
+        r.onsuccess = () => {
+          const cur = r.result;
+          if (!cur) return;
+          const next = patchFn(cur);
+          if (next) s.put(next);
+        };
+      }
+
+      // Ako A/Z nemaju shareKey -> setuj na NIZE_BANJE_2
+      patchApartment("A", (cur) => {
+        if (cur.groupId === "AZ" && !cur.shareKey) {
+          return { ...cur, shareKey: "NIZE_BANJE_2", updatedAt: new Date().toISOString() };
+        }
+        return null;
+      });
+
+      patchApartment("Z", (cur) => {
+        if (cur.groupId === "AZ" && !cur.shareKey) {
+          return { ...cur, shareKey: "NIZE_BANJE_2", updatedAt: new Date().toISOString() };
+        }
+        return null;
+      });
     };
 
     req.onblocked = () => {
@@ -222,9 +283,84 @@ function openDB() {
         console.warn("[db] versionchange -> connection closed. Reload page / close other tabs.");
       };
 
+      // Run post-upgrade migrations asynchronously
+      runPostUpgradeMigrations(db).catch(err => {
+        console.error("[db] Post-upgrade migration failed:", err);
+      });
+
       resolve(db);
     };
     req.onerror = () => reject(req.error);
+  });
+}
+
+// ===== POST-UPGRADE MIGRATIONS =====
+// Migrations that run after DB is opened (not in onupgradeneeded transaction)
+async function runPostUpgradeMigrations(db) {
+  await patchShareSetsTimestamps(db);
+  await patchSystemGroupNames();
+}
+
+async function patchSystemGroupNames() {
+  const now = new Date().toISOString();
+
+  const gAZ = await dbGetOne("groups", "AZ");
+  if (gAZ && gAZ.isSystem && gAZ.name !== "Shared") {
+    await dbPutOne("groups", { ...gAZ, name: "Shared", updatedAt: now });
+  }
+
+  const gO = await dbGetOne("groups", "O");
+  if (gO && gO.isSystem && gO.name !== "Solo") {
+    await dbPutOne("groups", { ...gO, name: "Solo", updatedAt: now });
+  }
+
+  const gN = await dbGetOne("groups", "N");
+  if (gN && gN.isSystem && gN.name !== "Managed") {
+    await dbPutOne("groups", { ...gN, name: "Managed", updatedAt: now });
+  }
+}
+
+async function patchShareSetsTimestamps(db) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("share_sets", "readwrite");
+    const store = tx.objectStore("share_sets");
+    const getAllReq = store.getAll();
+
+    getAllReq.onsuccess = () => {
+      const all = getAllReq.result || [];
+      const now = new Date().toISOString();
+
+      for (const s of all) {
+        let changed = false;
+        const rec = { ...s };
+
+        // Migrate snake_case to camelCase
+        if (rec.updated_at && !rec.updatedAt) {
+          rec.updatedAt = rec.updated_at;
+          delete rec.updated_at;
+          changed = true;
+        }
+
+        // Ensure updatedAt exists
+        if (!rec.updatedAt) {
+          rec.updatedAt = now;
+          changed = true;
+        }
+
+        // Ensure createdAt exists
+        if (!rec.createdAt) {
+          rec.createdAt = rec.updatedAt || now;
+          changed = true;
+        }
+
+        if (changed) {
+          store.put(rec);
+        }
+      }
+    };
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
   });
 }
 
