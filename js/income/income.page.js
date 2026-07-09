@@ -54,6 +54,7 @@ const state = {
     selectedCalendarYear: null,
     selectedPeriodKey: null,
     isYearView: false,
+    editingIncomeItemId: null,
 };
 
 const CF_EUR = 10;
@@ -171,6 +172,10 @@ function toggleFieldsByApartment() {
 }
 
 function resetIncomeForm({ keepApt = true, keepPlatform = true } = {}) {
+    state.editingIncomeItemId = null;
+    if (els.btnAddIncomeItem) {
+        els.btnAddIncomeItem.textContent = "Dodaj prihod";
+    }
     if (els.incAddAmount) els.incAddAmount.value = "";
     if (els.incAddAmountUsd) els.incAddAmountUsd.value = "";
     if (els.incAddFxRate) els.incAddFxRate.value = "";
@@ -202,6 +207,10 @@ function openModal() {
 }
 
 function closeModal() {
+    state.editingIncomeItemId = null;
+    if (els.btnAddIncomeItem) {
+        els.btnAddIncomeItem.textContent = "Dodaj prihod";
+    }
     els.modal?.classList.add("is-hidden");
     els.modal?.setAttribute("aria-hidden", "true");
 }
@@ -277,10 +286,118 @@ async function upsertNCommission(year, month, details) {
     });
 }
 
+function computeNetForNItem(item) {
+    return Number(item.amount_eur || 0) || 0;
+}
+
+async function rebuildNCommissionForPeriod(year, month) {
+    const items = await dbGetAll("income_items");
+    const nItems = items.filter(it =>
+        it.apartment === "N" &&
+        Number(it.year) === Number(year) &&
+        Number(it.month) === Number(month)
+    );
+
+    let incomeNTotal = 0;
+    let bookingFeeTotal = 0;
+    let ownerTotal = 0;
+    let commissionTotal = 0;
+    let lastPlatform = null;
+
+    for (const it of nItems) {
+        const platform = String(it.platform || "").toLowerCase();
+        const net = computeNetForNItem(it);
+
+        if (!Number.isFinite(net) || net <= 0) continue;
+
+        const fee = Number(it.platform_fee_eur || 0) || 0;
+        const owner = round2(net * 0.75);
+        const commission = round2(net * 0.25 + CF_EUR);
+
+        incomeNTotal += net;
+        bookingFeeTotal += fee;
+        ownerTotal += owner;
+        commissionTotal += commission;
+        lastPlatform = platform || lastPlatform;
+    }
+
+    const existing = await dbGetOneByIndex("n_commission", "by_period", [year, month]);
+
+    await dbPutOne("n_commission", {
+        id: existing?.id || `ncomm_${year}_${String(month).padStart(2, "0")}`,
+        year,
+        month,
+        incomeN_eur_total: round2(incomeNTotal),
+        booking_fee_eur: round2(bookingFeeTotal),
+        owner_eur: round2(ownerTotal),
+        commission_eur: round2(commissionTotal),
+        platform: lastPlatform,
+        updated_at: new Date().toISOString(),
+    });
+}
+
 // ---------- ADD ITEM (core logic) ----------
+
+async function openIncomeItemForEdit(id) {
+    const items = await dbGetAll("income_items");
+    const item = items.find(x => String(x.id) === String(id));
+    if (!item) {
+        alert("Unos prihoda nije pronađen.");
+        return;
+    }
+    state.editingIncomeItemId = item.id;
+    if (els.incAddApt) els.incAddApt.value = item.apartment || "";
+    if (els.incAddPlatform) {
+        els.incAddPlatform.value = item.platform || "Booking";
+        els.incAddPlatform.dispatchEvent(new Event("change"));
+    }
+    const platform = String(item.platform || "").toLowerCase();
+    if (els.incAddAmount) {
+        if (platform === "booking") {
+            els.incAddAmount.value = item.gross_eur ?? item.amount_eur ?? "";
+        } else if (platform === "airbnb" && item.apartment === "N") {
+            els.incAddAmount.value = item.gross_eur ?? item.amount_eur ?? "";
+        } else {
+            els.incAddAmount.value = item.amount_eur ?? "";
+        }
+    }
+    if (els.incAddAmountUsd) {
+        els.incAddAmountUsd.value = item.amount_usd ?? "";
+    }
+    if (els.incAddFxRate) {
+        els.incAddFxRate.value = item.fx_usd_eur ?? item.fx_rate ?? "";
+    }
+    if (els.incAddBookingFee) {
+        els.incAddBookingFee.value = item.platform_fee_eur ?? "";
+    }
+    if (els.incAddCheckin) els.incAddCheckin.value = item.checkin || "";
+    if (els.incAddCheckout) els.incAddCheckout.value = item.checkout || "";
+    if (els.incAddNote) els.incAddNote.value = item.note || "";
+    if (els.btnAddIncomeItem) {
+        els.btnAddIncomeItem.textContent = "Sačuvaj izmjenu";
+    }
+    toggleFieldsByApartment();
+    if (els.incAddPaid) {
+        els.incAddPaid.checked = !!item.paid;
+    }
+    if (els.modal) {
+        els.modal.classList.remove("is-hidden");
+        els.modal.setAttribute("aria-hidden", "false");
+    }
+}
 
 async function handleAddIncomeItem() {
     debug("CLICK add income item");
+
+    let existingItem = null;
+    if (state.editingIncomeItemId) {
+        const items = await dbGetAll("income_items");
+        existingItem = items.find(x => String(x.id) === String(state.editingIncomeItemId));
+        if (!existingItem) {
+            alert("Unos prihoda nije pronađen.");
+            return;
+        }
+    }
 
     const apartment = els.incAddApt?.value || "A";
     const platform = (els.incAddPlatform?.value || "").toLowerCase();
@@ -390,8 +507,6 @@ async function handleAddIncomeItem() {
     const checkout = els.incAddCheckout?.value || "";
     const note = (els.incAddNote?.value || "").trim();
     const period = periodFromInputsOrSelected(checkin);
-
-    const nightsInputRaw = els.incAddNights?.value;
     let nights = 0;
 
     if (isN) {
@@ -401,15 +516,19 @@ async function handleAddIncomeItem() {
         if (!a || !b || b.getTime() <= a.getTime()) return alert("Check-out mora biti poslije check-in datuma.");
         nights = nightsFromDates(checkin, checkout);
     } else {
+        const hasBothDates = !!checkin && !!checkout;
+        const nightsInputRaw = els.incAddNights?.value;
         const hasManualNights = (nightsInputRaw !== "" && nightsInputRaw != null);
-        if (hasManualNights) {
-            const nn = Number(nightsInputRaw);
-            nights = Number.isFinite(nn) ? Math.max(0, Math.round(nn)) : 0;
-        } else if (checkin && checkout) {
+        if (hasBothDates) {
             const a = safeDate(checkin);
             const b = safeDate(checkout);
-            if (!a || !b || b.getTime() <= a.getTime()) return alert("Check-out mora biti poslije check-in datuma.");
+            if (!a || !b || b.getTime() <= a.getTime()) {
+                return alert("Check-out mora biti poslije check-in datuma.");
+            }
             nights = nightsFromDates(checkin, checkout);
+        } else if (hasManualNights) {
+            const nn = Number(nightsInputRaw);
+            nights = Number.isFinite(nn) ? Math.max(0, Math.round(nn)) : 0;
         } else {
             return alert("Za apartmane A/Z unesi ili Noćenja ili oba datuma (Check-in i Check-out).");
         }
@@ -417,7 +536,7 @@ async function handleAddIncomeItem() {
 
     // --- persist item ---
     const item = {
-        id: makeId("incit"),
+        id: existingItem?.id || makeId("incit"),
         year: period.year,
         month: period.month,
         apartment,
@@ -442,15 +561,37 @@ async function handleAddIncomeItem() {
         checkout: checkout || null,
         note,
         source: "Manual",
-        created_at: new Date().toISOString(),
+        created_at: existingItem?.created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
     };
 
     try {
         await dbPutOne("income_items", item);
         await ensureImportPeriod(period.year, period.month);
+        if (
+            existingItem &&
+            (
+                Number(existingItem.year) !== Number(period.year) ||
+                Number(existingItem.month) !== Number(period.month)
+            )
+        ) {
+            await ensureImportPeriod(existingItem.year, existingItem.month);
+        }
 
-        // --- N: upsert n_commission ---
-        if (isN) {
+        // --- N: commission sync ---
+        if (existingItem) {
+            const affectedPeriods = new Set();
+            if (existingItem.apartment === "N") {
+                affectedPeriods.add(`${existingItem.year}-${existingItem.month}`);
+            }
+            if (isN) {
+                affectedPeriods.add(`${period.year}-${period.month}`);
+            }
+            for (const key of affectedPeriods) {
+                const [y, m] = key.split("-").map(Number);
+                await rebuildNCommissionForPeriod(y, m);
+            }
+        } else if (isN) {
             const details = calcNBreakdown({
                 platform,
                 gross_reservation_eur: grossReservationEur,
@@ -699,6 +840,13 @@ function attach() {
         }
     });
 
+    els.itemsTable?.addEventListener("click", async (e) => {
+        const btn = e.target.closest('[data-action="edit-income-item"]');
+        if (!btn) return;
+
+        await openIncomeItemForEdit(btn.dataset.id);
+    });
+
     els.incApt?.addEventListener("change", async () => {
         state.apt = els.incApt.value;
         await withLoading(async () => { await render(); });
@@ -767,6 +915,7 @@ function attach() {
         toggleFieldsByPlatform();
 
         if (els.incAddPlatform.value === "vrbo") {
+            if (state.editingIncomeItemId) return;
             try {
                 setFxMsg("Učitavam kurs…");
                 const rate = await fetchUsdEurRateForToday();

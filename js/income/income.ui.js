@@ -71,6 +71,25 @@ function paidIcon(paid) {
   return paid ? "✔" : "⏳";
 }
 
+function formatDateBS(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+  return `${day}.${month}.${year}`;
+}
+
+function stayPeriodLabel(row) {
+  const checkin = formatDateBS(row.checkin);
+  const checkout = formatDateBS(row.checkout);
+  if (checkin && checkout) {
+    return `${checkin} – ${checkout}`;
+  }
+  return `${row.year}-${String(row.month).padStart(2, "0")}`;
+}
+
 // ---------- ITEMS TABLE (taksativne stavke) ----------
 export function renderIncomeItemsTable(root, items) {
   if (!items || items.length === 0) {
@@ -94,14 +113,15 @@ export function renderIncomeItemsTable(root, items) {
           <th>Platforma</th>
           <th class="right">EUR</th>
           <th class="right">Noćenja</th>
-          <th class="center">Plaćeno</th>
           <th>Napomena</th>
+          <th>Status</th>
+          <th>Akcije</th>
         </tr>
       </thead>
       <tbody>
         ${rows.map(r => `
           <tr>
-            <td>${r.year}-${String(r.month).padStart(2, "0")}</td>
+            <td>${stayPeriodLabel(r)}</td>
             <td>${r.apartment || "—"}</td>
             <td>
               <span class="badge ${platformClass(r.platform)}">
@@ -110,16 +130,18 @@ export function renderIncomeItemsTable(root, items) {
             </td>
             <td class="right">${fmtEUR(r.amount_eur)}</td>
             <td class="right">${fmtNum(r.nights)}</td>
-            <td class="center">
-               <input
-                 type="checkbox"
-                 class="paidToggle"
-                 data-id="${r.id}"
-                 ${r.paid ? "checked" : ""}
-                title="Označi kao plaćeno / neplaćeno"
-                />
-            </td>
             <td>${r.note || r.source || ""}</td>
+            <td>
+              <input
+                type="checkbox"
+                class="paidToggle"
+                data-id="${r.id}"
+                ${r.paid ? "checked" : ""}
+              />
+            </td>
+            <td>
+              ${r.id ? `<button type="button" class="btn btn-sm" data-action="edit-income-item" data-id="${r.id}">Edit</button>` : "—"}
+            </td>
           </tr>
         `).join("")}
       </tbody>
