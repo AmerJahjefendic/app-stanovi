@@ -1,7 +1,8 @@
 // js/expenses/expenses.page.js
 import { keyFromPeriod, periodKeyToYM, safeDate } from "../shared/utils.js";
-import { renderYearCalendar, setLoading, showError, withLoading } from "../shared/ui.js";
+import { renderYearCalendar, showError, withLoading } from "../shared/ui.js";
 import {
+    dbDelete,
     dbGetAll,
     dbGetOne,
     dbPutCategoryAlias,
@@ -396,6 +397,59 @@ async function openExpenseForEdit(id) {
     openModal();
 }
 
+async function handleDeleteExpense(id) {
+    const expenseId = String(id || "").trim();
+    if (!expenseId) return;
+
+    const expense = await dbGetOne("expenses", expenseId);
+    if (!expense) {
+        alert("Trošak nije pronađen.");
+        await render();
+        return;
+    }
+
+    const category =
+        expense.raw_category ||
+        expense.category ||
+        "Bez kategorije";
+    const amountBam = Number(expense.amount_bam || 0).toFixed(2);
+
+    let extraInfo = "";
+    if (expense.scope === SCOPE.SHARED) {
+        extraInfo =
+            "\n\n⚠ Ovo je SHARED trošak." +
+            "\nBrisanjem će biti uklonjen iz obračuna za oba apartmana (A i Z).";
+    } else {
+        extraInfo =
+            `\n\nApartman: ${expense.apartment}`;
+    }
+
+    const confirmed = window.confirm(
+        `Da li sigurno želiš obrisati ovaj trošak?\n\n` +
+        `Kategorija: ${category}\n` +
+        `Iznos: ${amountBam} BAM` +
+        extraInfo
+    );
+    if (!confirmed) return;
+
+    try {
+        await dbDelete("expenses", expenseId);
+
+        if (state.editingExpenseId === expenseId) {
+            resetExpenseEditState();
+            closeModal();
+        }
+
+        await render();
+    } catch (error) {
+        console.error(error);
+        alert(
+            error?.message ||
+            "Greška pri brisanju troška."
+        );
+    }
+}
+
 /**
  * Sinhronizuje UI modala (prikazuje/sakriva apartman select na osnovu scope)
  */
@@ -471,20 +525,80 @@ function uniqueSorted(arr) {
 }
 
 /**
+ * Mapira kategorije kroz postojeća alias pravila i vraća
+ * samo canonical, jedinstvene nazive.
+ */
+function canonicalizeCategories(categories) {
+    return uniqueSorted(
+        (categories || []).map((category) =>
+            mapExpenseCategory(category)
+        )
+    );
+}
+
+function normalizeCategoryName(value) {
+    return String(value || "")
+        .trim()
+        .toLocaleLowerCase("bs");
+}
+
+async function updateExpensesCategory(fromCategory, toCategory) {
+    const fromNormalized = normalizeCategoryName(fromCategory);
+    const expenses = await dbGetAll("expenses");
+    let updatedCount = 0;
+    const now = new Date().toISOString();
+
+    for (const expense of expenses) {
+        const categoryNormalized =
+            normalizeCategoryName(expense.category);
+        const rawCategoryNormalized =
+            normalizeCategoryName(expense.raw_category);
+        const matches =
+            categoryNormalized === fromNormalized ||
+            rawCategoryNormalized === fromNormalized;
+
+        if (!matches) continue;
+
+        await dbPutOne("expenses", {
+            ...expense,
+            // raw_category ostaje izvorna vrijednost iz importa.
+            category: toCategory,
+            updated_at: now,
+        });
+        updatedCount += 1;
+    }
+
+    return updatedCount;
+}
+
+/**
  * Handler za dodavanje nove kategorije putem prompt dijaloga
  */
 function handleAddCategory() {
     const name = prompt("Unesi naziv nove kategorije:");
     if (!name) return;
-    const cat = String(name).trim();
-    if (!cat) return;
+    const rawCategory = String(name).trim();
+    if (!rawCategory) return;
 
-    const cats = uniqueSorted([...getCategoriesLocal(), cat]);
-    saveCategoriesLocal(cats);
+    const category = mapExpenseCategory(rawCategory);
 
-    // refresh oba selecta (filter + modal)
-    renderExpenseFilters(els.expCat, cats, state.cat);
-    renderExpenseFilters(els.expAddCategory, cats, cat);
+    const categories = canonicalizeCategories([
+        ...getCategoriesLocal(),
+        category,
+    ]);
+
+    saveCategoriesLocal(categories);
+
+    renderExpenseFilters(
+        els.expCat,
+        categories,
+        state.cat
+    );
+    renderExpenseFilters(
+        els.expAddCategory,
+        categories,
+        category
+    );
 }
 
 // ---------- data ----------
@@ -575,7 +689,7 @@ async function render() {
     const catsAll = Array.from(new Set(all.map(e => normCat(e)))).sort();
 
     // ===== MODAL category dropdown =====
-    const catsForSelect = uniqueSorted([
+    const catsForSelect = canonicalizeCategories([
         ...catsAll,
         ...getCategoriesLocal(),
         "Čišćenje",
@@ -789,7 +903,18 @@ function attach() {
 
         await dbPutCategoryAlias(from, to);
         await loadCategoryAliases(); // refresh cache u mappingConfig
-        els.mergeMsg.textContent = `OK: "${from}" → "${to}"`;
+        const updatedCount = await updateExpensesCategory(
+            from,
+            to
+        );
+        const cleanedCategories = canonicalizeCategories([
+            ...getCategoriesLocal(),
+            to,
+        ]);
+        saveCategoriesLocal(cleanedCategories);
+        els.mergeMsg.textContent =
+            `OK: "${from}" → "${to}" ` +
+            `(${updatedCount} troškova ažurirano)`;
         await render();
     });
 
@@ -859,8 +984,17 @@ function attach() {
         const editButton = event.target.closest(
             '[data-action="edit-expense"]'
         );
-        if (!editButton) return;
-        await openExpenseForEdit(editButton.dataset.id);
+        if (editButton) {
+            await openExpenseForEdit(editButton.dataset.id);
+            return;
+        }
+
+        const deleteButton = event.target.closest(
+            '[data-action="delete-expense"]'
+        );
+        if (deleteButton) {
+            await handleDeleteExpense(deleteButton.dataset.id);
+        }
     });
 
     // ===== MODAL events =====

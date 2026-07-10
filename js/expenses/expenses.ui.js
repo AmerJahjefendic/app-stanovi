@@ -38,8 +38,8 @@ export function renderExpensesByCategory(root, expenses) {
       <thead><tr><th>Kategorija</th><th class="right">EUR</th></tr></thead>
       <tbody>
         ${rows.map(([k,sum]) => `
-          <tr class="catRow" data-cat="${k}">
-            <td>${k}</td>
+          <tr class="catRow" data-cat="${escapeHtml(k)}">
+            <td>${escapeHtml(k)}</td>
             <td class="right">${fmtEUR(sum)}</td>
           </tr>
         `).join("")}
@@ -107,14 +107,24 @@ export function renderExpensesList(root, expenses) {
                   ${
                     e.id
                       ? `
-                        <button
-                          type="button"
-                          class="btn btn-sm"
-                          data-action="edit-expense"
-                          data-id="${escapeHtml(e.id)}"
-                        >
-                          Uredi
-                        </button>
+                        <div class="action-buttons">
+                          <button
+                            type="button"
+                            class="btn btn-sm btn-edit"
+                            data-action="edit-expense"
+                            data-id="${escapeHtml(e.id)}"
+                          >
+                            ✏ Uredi
+                          </button>
+                          <button
+                            type="button"
+                            class="btn btn-sm btn-delete"
+                            data-action="delete-expense"
+                            data-id="${escapeHtml(e.id)}"
+                          >
+                            🗑 Obriši
+                          </button>
+                        </div>
                       `
                       : "—"
                   }

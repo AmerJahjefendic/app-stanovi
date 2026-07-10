@@ -140,7 +140,7 @@ export function renderIncomeItemsTable(root, items) {
               />
             </td>
             <td>
-              ${r.id ? `<button type="button" class="btn btn-sm" data-action="edit-income-item" data-id="${r.id}">Edit</button>` : "—"}
+              ${r.id ? `<div class="action-buttons"><button type="button" class="btn btn-sm btn-edit" data-action="edit-income-item" data-id="${r.id}">Edit</button></div>` : "—"}
             </td>
           </tr>
         `).join("")}

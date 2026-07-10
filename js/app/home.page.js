@@ -386,6 +386,7 @@ async function exportBackup() {
     income: await safeGetAll("income"),
     expenses_v2: await safeGetAll("expenses"), 
     shopping_items: await safeGetAll("shopping_items"),
+    category_aliases: await safeGetAll("category_aliases"),
 
     // ✅ LEGACY 
     imports: await safeGetAll("imports"),
@@ -459,6 +460,14 @@ async function restoreBackupFile(file) {
   // ✅ RESTORE NEW DATA (if present)
   await safePutMany("income", data.income);
   await safePutMany("shopping_items", data.shopping_items);
+  await safePutMany(
+    "category_aliases",
+    data.category_aliases
+  );
+  await loadCategoryAliases();
+  const expensesBackup = Array.isArray(data.expenses_v2)
+    ? data.expenses_v2
+    : (data.expenses || []);
 
   const periods = new Set((data.imports || []).map(i => `${i.year}-${i.month}`));
   for (const key of periods) {
@@ -466,9 +475,9 @@ async function restoreBackupFile(file) {
     await dbPutMany("imports", (data.imports || []).filter(i => i.year === Number(y) && i.month === Number(m)));
     await dbPutMany("income_monthly", (data.income_monthly || []).filter(i => i.year === Number(y) && i.month === Number(m)));
     await dbPutMany("income_items", (data.income_items || []).filter(i => i.year === Number(y) && i.month === Number(m)));
-    await dbPutMany("expenses", (data.expenses || []).filter(i => i.year === Number(y) && i.month === Number(m)));
     await dbPutMany("n_commission", (data.n_commission || []).filter(i => i.year === Number(y) && i.month === Number(m)));
   }
+  await safePutMany("expenses", expensesBackup);
 
   const imports = await dbGetAll("imports");
   imports.sort((a, b) => a.year - b.year || a.month - b.month);

@@ -676,3 +676,37 @@ td.right {
     border-radius: 10px;
   }
 }
+
+.action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.btn-edit,
+.btn-delete {
+  white-space: nowrap;
+}
+
+.btn-edit {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.btn-edit:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.btn-delete {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+}
+
+.btn-delete:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
