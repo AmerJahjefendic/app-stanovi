@@ -1,5 +1,5 @@
 // js/income/income.page.js
-import { dbGetAll, dbGetOne, dbGetOneByIndex, dbPutOne, makeId } from "../db/db.js";
+import { dbDelete, dbGetAll, dbGetOne, dbGetOneByIndex, dbPutOne, makeId } from "../db/db.js";
 import { keyFromPeriod, periodKeyToYM, safeDate } from "../shared/utils.js";
 import { debug } from "../shared/log.js";
 import { renderYearCalendar, withLoading } from "../shared/ui.js";
@@ -383,6 +383,38 @@ async function openIncomeItemForEdit(id) {
     if (els.modal) {
         els.modal.classList.remove("is-hidden");
         els.modal.setAttribute("aria-hidden", "false");
+    }
+}
+
+async function deleteIncomeItem(id) {
+    const item = await dbGetOne("income_items", id);
+    if (!item) {
+        alert("Unos prihoda nije pronađen.");
+        return;
+    }
+
+    const periodLabel =
+        item.checkin && item.checkout
+            ? `${item.checkin} – ${item.checkout}`
+            : `${item.year}-${String(item.month).padStart(2, "0")}`;
+
+    const confirmed = confirm(
+        `Obrisati prihod?\n\n` +
+        `Apartman: ${item.apartment || "—"}\n` +
+        `Period: ${periodLabel}\n` +
+        `Iznos: ${Number(item.amount_eur || 0).toFixed(2)} €`
+    );
+    if (!confirmed) return;
+
+    try {
+        await dbDelete("income_items", item.id);
+        if (item.apartment === "N") {
+            await rebuildNCommissionForPeriod(item.year, item.month);
+        }
+        await render();
+    } catch (e) {
+        console.error(e);
+        alert(e?.message || "Greška pri brisanju prihoda.");
     }
 }
 
@@ -841,10 +873,16 @@ function attach() {
     });
 
     els.itemsTable?.addEventListener("click", async (e) => {
-        const btn = e.target.closest('[data-action="edit-income-item"]');
-        if (!btn) return;
+        const editBtn = e.target.closest('[data-action="edit-income-item"]');
+        if (editBtn) {
+            await openIncomeItemForEdit(editBtn.dataset.id);
+            return;
+        }
 
-        await openIncomeItemForEdit(btn.dataset.id);
+        const deleteBtn = e.target.closest('[data-action="delete-income-item"]');
+        if (deleteBtn) {
+            await deleteIncomeItem(deleteBtn.dataset.id);
+        }
     });
 
     els.incApt?.addEventListener("change", async () => {
