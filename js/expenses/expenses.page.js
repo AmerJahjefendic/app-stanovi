@@ -1,7 +1,13 @@
 // js/expenses/expenses.page.js
 import { keyFromPeriod, periodKeyToYM, safeDate } from "../shared/utils.js";
 import { renderYearCalendar, setLoading, showError, withLoading } from "../shared/ui.js";
-import { dbGetAll, dbPutCategoryAlias, dbPutOne, makeId } from "../db/db.js";
+import {
+    dbGetAll,
+    dbGetOne,
+    dbPutCategoryAlias,
+    dbPutOne,
+    makeId,
+} from "../db/db.js";
 import { periodLabel } from "../shared/parseFilename.js";
 import { loadCategoryAliases, mapExpenseCategory } from "../shared/mappingConfig.js";
 import { renderYearBreakdownTable } from "./expenses.ui.js";
@@ -20,6 +26,7 @@ const els = {
     // ===== MODAL elements =====
     btnOpenExpenseModal: document.getElementById("btnOpenExpenseModal"),
     expModal: document.getElementById("expModal"),
+    expModalTitle: document.getElementById("expModalTitle"),
     btnCloseExpenseModal: document.getElementById("btnCloseExpenseModal"),
     btnCancelExpense: document.getElementById("btnCancelExpense"),
     btnSaveExpense: document.getElementById("btnSaveExpense"),
@@ -60,6 +67,9 @@ const state = {
     selectedPeriodKey: null,
     isYearView: false,
     listCollapsed: true,
+    // null = novi trošak
+    // ID = uređivanje postojećeg troška
+    editingExpenseId: null,
 };
 
 // ---------- helpers ----------
@@ -308,6 +318,82 @@ function openModal() {
 function closeModal() {
     els.expModal?.classList.add("is-hidden");
     els.expModal?.setAttribute("aria-hidden", "true");
+}
+
+/**
+ * Vraća modal u režim dodavanja novog troška.
+ * Ne briše scope i kategoriju, kako bi brzi unos ostao praktičan.
+ */
+function resetExpenseEditState() {
+    state.editingExpenseId = null;
+    if (els.expModalTitle) {
+        els.expModalTitle.textContent = "Novi trošak";
+    }
+    if (els.btnSaveExpense) {
+        els.btnSaveExpense.textContent = "Sačuvaj";
+    }
+}
+
+async function openExpenseForEdit(id) {
+    const expenseId = String(id || "").trim();
+    if (!expenseId) return;
+
+    const expense = await dbGetOne("expenses", expenseId);
+    if (!expense) {
+        showError("Trošak nije pronađen.");
+        return;
+    }
+
+    state.editingExpenseId = expense.id;
+
+    if (els.expModalTitle) {
+        els.expModalTitle.textContent = "Uredi trošak";
+    }
+    if (els.btnSaveExpense) {
+        els.btnSaveExpense.textContent = "Sačuvaj izmjenu";
+    }
+
+    if (els.expAddAmountBam) {
+        els.expAddAmountBam.value = expense.amount_bam ?? "";
+    }
+    if (els.expAddScope) {
+        els.expAddScope.value =
+            expense.scope === SCOPE.APARTMENT
+                ? SCOPE.APARTMENT
+                : SCOPE.SHARED;
+    }
+    if (els.expAddApt) {
+        els.expAddApt.value = expense.apartment || APARTMENTS.A;
+    }
+    if (els.expAddDate) {
+        els.expAddDate.value = expense.date || "";
+    }
+    if (els.expAddNote) {
+        els.expAddNote.value = expense.note || "";
+    }
+
+    const expenseCategory = String(
+        expense.raw_category ||
+        expense.category ||
+        ""
+    ).trim();
+
+    if (els.expAddCategory && expenseCategory) {
+        const categoryExists = Array.from(els.expAddCategory.options)
+            .some((option) => option.value === expenseCategory);
+
+        if (!categoryExists) {
+            const option = document.createElement("option");
+            option.value = expenseCategory;
+            option.textContent = expenseCategory;
+            els.expAddCategory.appendChild(option);
+        }
+
+        els.expAddCategory.value = expenseCategory;
+    }
+
+    syncScopeUI();
+    openModal();
 }
 
 /**
@@ -571,58 +657,99 @@ async function handleSaveExpense() {
         return;
     }
 
-    const categoryRaw = String(els.expAddCategory?.value || "").trim();
+    const categoryRaw = String(
+        els.expAddCategory?.value || ""
+    ).trim();
     if (!categoryRaw || categoryRaw === "ALL") {
         alert("Odaberi kategoriju.");
         return;
     }
 
-    const scope = els.expAddScope?.value || SCOPE.SHARED;
-    const apartment = scope === SCOPE.APARTMENT ? (els.expAddApt?.value || APARTMENTS.A) : null;
+    const existingExpense = state.editingExpenseId
+        ? await dbGetOne("expenses", state.editingExpenseId)
+        : null;
+
+    if (state.editingExpenseId && !existingExpense) {
+        alert("Trošak koji uređuješ više nije pronađen.");
+        resetExpenseEditState();
+        closeModal();
+        await render();
+        return;
+    }
+
+    const scope =
+        els.expAddScope?.value || SCOPE.SHARED;
+    const apartment =
+        scope === SCOPE.APARTMENT
+            ? (els.expAddApt?.value || APARTMENTS.A)
+            : null;
 
     const dateStr = els.expAddDate?.value || "";
-    const period = periodFromDateOrSelected(dateStr);
+    let period = null;
+
+    if (dateStr) {
+        period = periodFromDateOrSelected(dateStr);
+    } else if (existingExpense) {
+        period = {
+            year: existingExpense.year,
+            month: existingExpense.month,
+        };
+    } else {
+        period = periodFromDateOrSelected("");
+    }
+
     if (!period) {
-        alert("Unesi datum ili odaberi mjesec u kalendaru (MONTH view) da se odredi period.");
+        alert(
+            "Unesi datum ili odaberi mjesec u kalendaru " +
+            "(MONTH view) da se odredi period."
+        );
         return;
     }
 
     const fx = getFxRate();
     const amountEur = round2(amountBam / fx);
+    const now = new Date().toISOString();
 
     const item = {
-        id: makeId("exp"),
+        ...(existingExpense || {}),
+        id: existingExpense?.id || makeId("exp"),
         year: period.year,
         month: period.month,
-
         amount_bam: round2(amountBam),
         amount_eur: amountEur,
-
-        scope,                 // "SHARED" / "APARTMENT"
-        apartment,             // null ili "A"/"Z"/"N"
-
-        raw_category: categoryRaw, // da imaš original
-        category: categoryRaw,     // normCat će je kasnije mapirati
+        scope,
+        apartment,
+        raw_category: categoryRaw,
+        category: categoryRaw,
         date: dateStr || null,
-        note: String(els.expAddNote?.value || "").trim(),
-        source: "Manual",
-        created_at: new Date().toISOString(),
+        note: String(
+            els.expAddNote?.value || ""
+        ).trim(),
+        source: existingExpense?.source || "Manual",
+        created_at:
+            existingExpense?.created_at || now,
+        updated_at: now,
     };
 
     try {
         await dbPutOne("expenses", item);
         await ensureImportPeriod(period.year, period.month);
 
-        // reset inputa (ostavi scope + category radi brzog unosa)
+        // Očisti polja, ali ostavi scope i kategoriju
+        // radi bržeg unosa sljedećeg troška.
         els.expAddAmountBam.value = "";
         els.expAddDate.value = "";
         els.expAddNote.value = "";
 
+        resetExpenseEditState();
         closeModal();
         await render();
-    } catch (e) {
-        console.error(e);
-        alert(e?.message || "Greška pri snimanju troška.");
+    } catch (error) {
+        console.error(error);
+        alert(
+            error?.message ||
+            "Greška pri snimanju troška."
+        );
     }
 }
 
@@ -728,17 +855,35 @@ function attach() {
         await render();
     });
 
+    els.list?.addEventListener("click", async (event) => {
+        const editButton = event.target.closest(
+            '[data-action="edit-expense"]'
+        );
+        if (!editButton) return;
+        await openExpenseForEdit(editButton.dataset.id);
+    });
+
     // ===== MODAL events =====
     els.btnOpenExpenseModal?.addEventListener("click", () => {
+        resetExpenseEditState();
         syncScopeUI();
         openModal();
     });
 
-    els.btnCloseExpenseModal?.addEventListener("click", closeModal);
-    els.btnCancelExpense?.addEventListener("click", closeModal);
+    els.btnCloseExpenseModal?.addEventListener("click", () => {
+        resetExpenseEditState();
+        closeModal();
+    });
+    els.btnCancelExpense?.addEventListener("click", () => {
+        resetExpenseEditState();
+        closeModal();
+    });
 
     els.expModal?.addEventListener("click", (e) => {
-        if (e.target?.dataset?.close) closeModal();
+        if (e.target?.dataset?.close) {
+            resetExpenseEditState();
+            closeModal();
+        }
     });
 
     els.expAddScope?.addEventListener("change", syncScopeUI);
@@ -749,6 +894,7 @@ function attach() {
 
     document.addEventListener("keydown", (e) => {
         if (e.key === "Escape" && els.expModal && !els.expModal.classList.contains("is-hidden")) {
+            resetExpenseEditState();
             closeModal();
         }
     });

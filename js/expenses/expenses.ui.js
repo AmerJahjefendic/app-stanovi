@@ -50,6 +50,25 @@ export function renderExpensesByCategory(root, expenses) {
 
 
 // ---------- TABLE: RAW LIST ----------
+function formatExpensePeriod(expense) {
+  const dateValue = String(expense?.date || "").trim();
+  if (dateValue) {
+    const match = dateValue.match(
+      /^(\d{4})-(\d{2})-(\d{2})$/
+    );
+    if (match) {
+      const [, year, month, day] = match;
+      return `${day}.${month}.${year}.`;
+    }
+  }
+  const year = Number(expense?.year || 0);
+  const month = Number(expense?.month || 0);
+  if (year && month >= 1 && month <= 12) {
+    return `${String(month).padStart(2, "0")}/${year}`;
+  }
+  return "—";
+}
+
 export function renderExpensesList(root, expenses) {
   if (!root) return;
 
@@ -65,15 +84,16 @@ export function renderExpensesList(root, expenses) {
     <table>
       <thead>
         <tr>
-          <th>Period</th><th>Apt</th><th>Kategorija</th><th class="right">EUR</th>
+          <th>Datum / period</th><th>Apt</th><th>Kategorija</th><th>Napomena</th><th class="right">EUR</th><th>Akcija</th>
         </tr>
       </thead>
       <tbody>
         ${rows
           .map((e) => {
-            const period = `${Number(e.year || 0)}-${String(Number(e.month || 0)).padStart(2, "0")}`;
+            const period = formatExpensePeriod(e);
             const apt = e.apartment ? String(e.apartment) : "—";
             const cat = (e.category && String(e.category).trim()) ? String(e.category).trim() : "NEPOZNATO";
+            const note = String(e.note || "").trim() || "—";
             const eur = Number(e.amount_eur || 0);
 
             return `
@@ -81,7 +101,24 @@ export function renderExpensesList(root, expenses) {
                 <td>${escapeHtml(period)}</td>
                 <td>${escapeHtml(apt)}</td>
                 <td>${escapeHtml(cat)}</td>
+                <td>${escapeHtml(note)}</td>
                 <td class="right">${fmtEUR(eur)}</td>
+                <td>
+                  ${
+                    e.id
+                      ? `
+                        <button
+                          type="button"
+                          class="btn btn-sm"
+                          data-action="edit-expense"
+                          data-id="${escapeHtml(e.id)}"
+                        >
+                          Uredi
+                        </button>
+                      `
+                      : "—"
+                  }
+                </td>
               </tr>
             `;
           })
