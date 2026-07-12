@@ -289,7 +289,14 @@ async function upsertNCommission(year, month, details) {
 }
 
 function computeSplitBaseForNItem(item) {
-    return Number(item.amount_eur || 0) || 0;
+    const amount = Number(item?.amount_eur || 0) || 0;
+    const platform = String(item?.platform || "").trim().toLowerCase();
+
+    if (platform === Platforms.DIRECT) {
+        return amount - CF_EUR;
+    }
+
+    return amount;
 }
 
 async function rebuildNCommissionForPeriod(year, month) {
@@ -553,7 +560,12 @@ async function handleAddIncomeItem() {
             // Direct/Other nema platform fee.
             // CF se prvo izdvaja, ostatak ide u raspodjelu.
             if (isN) {
-                splitBase = eur - CF_EUR; // prvo oduzmi CF, pa raspodjeli
+                splitBase = eur - CF_EUR;
+
+                if (!(Number.isFinite(splitBase) && splitBase > 0)) {
+                    return alert("Osnovica za N mora biti > 0.");
+                }
+
                 platformFee = 0;
                 grossAmount = 0;
             }
