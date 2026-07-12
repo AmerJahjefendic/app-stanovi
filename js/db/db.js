@@ -1,6 +1,6 @@
 // js/db.js
 const DB_NAME = "appstanovi_db";
-export const DB_VER = 13;
+export const DB_VER = 14;
 
 // helper: create store if missing
 function ensureStore(db, name, opts, indexDefs = []) {
@@ -266,6 +266,42 @@ function openDB() {
           return { ...cur, shareKey: "NIZE_BANJE_2", updatedAt: new Date().toISOString() };
         }
         return null;
+      });
+
+      // ===== MIGRATION v14: Airbnb fee model =====
+      // Dopisuje samo nedostajuće polje; postojeći iznosi i obračuni ostaju netaknuti.
+      if (req.oldVersion < 14 && db.objectStoreNames.contains("income_items")) {
+        const incomeStore = t.objectStore("income_items");
+        const cursorReq = incomeStore.openCursor();
+        cursorReq.onsuccess = () => {
+          const cursor = cursorReq.result;
+          if (!cursor) return;
+
+          const item = cursor.value;
+          const isAirbnb = String(item?.platform || "").trim().toLowerCase() === "airbnb";
+          const hasFeeModel = String(item?.feeModel || "").trim() !== "";
+
+          if (isAirbnb && !hasFeeModel) {
+            cursor.update({ ...item, feeModel: "SPLIT_FEE" });
+          }
+          cursor.continue();
+        };
+      }
+
+      // Default Airbnb rule for the existing MANAGED apartment.
+      putIfMissing("commission_rules", "N_AIRBNB_DEFAULT", {
+        id: "N_AIRBNB_DEFAULT",
+        groupId: "N",
+        apartmentId: "N",
+        platform: "airbnb",
+        feeModel: "SPLIT_FEE",
+        platformFeePct: 3,
+        cleaningFeeEur: 10,
+        agencyPct: 25,
+        ownerPct: 75,
+        isDefault: true,
+        createdAt: now,
+        updatedAt: now,
       });
     };
 

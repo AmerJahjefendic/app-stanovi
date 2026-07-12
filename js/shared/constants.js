@@ -39,6 +39,19 @@ export const GROUP_IDS = {
 
 export const ALLOWED_NEW_GROUPS = [GROUP_IDS.SHARED, GROUP_IDS.SOLO];
 
+export const FeeModels = Object.freeze({
+  SPLIT_FEE: "SPLIT_FEE",
+  SINGLE_FEE: "SINGLE_FEE",
+});
+
+export const Platforms = Object.freeze({
+  AIRBNB: "airbnb",
+  BOOKING: "booking",
+  VRBO: "vrbo",
+  DIRECT: "direct",
+  OTHER: "other",
+});
+
 export const LS_KEYS = {
   shareRule: "appstanovi_shareRule",
 };

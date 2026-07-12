@@ -2,6 +2,8 @@
 import { dbDelete, dbGetAll, dbGetOne, dbGetOneByIndex, dbPutOne, makeId } from "../db/db.js";
 import { keyFromPeriod, periodKeyToYM, safeDate } from "../shared/utils.js";
 import { debug } from "../shared/log.js";
+import { FeeModels, Platforms } from "../shared/constants.js";
+import { calculateManagedReservation } from "../shared/managed-income-calculator.js";
 import { renderYearCalendar, withLoading } from "../shared/ui.js";
 import { periodLabel } from "../shared/parseFilename.js";
 import { renderIncomeSummary, renderIncomeItemsTable, renderIncomeByApt } from "./income.ui.js";
@@ -230,39 +232,39 @@ async function ensureImportPeriod(year, month) {
 }
 
 // ---------- N breakdown + upsert ----------
-// booking_fee_eur u n_commission = PLATFORM FEE (Booking fee ili Airbnb fee), VRBO=0
+// booking_fee_eur u n_commission = platformFee (Booking fee ili Airbnb fee), VRBO=0
 function calcNBreakdown({
     platform,
-    gross_reservation_eur = 0, // tvoj unos (osnovica bez CF) za Airbnb/Booking
-    net_to_us_eur = 0,         // net bez CF (tj. "nama ostaje" za raspodjelu)
-    platform_fee_eur = 0       // booking fee ili airbnb fee
+    grossAmount = 0,       // unos rezervacije (bez CF) za Airbnb/Booking
+    splitBase = 0,         // osnovica koja se dijeli 75/25
+    platformFee = 0        // booking fee ili airbnb fee
 }) {
-    const gross = Number(gross_reservation_eur || 0);
-    const net = Number(net_to_us_eur || 0);
-    const fee = Number(platform_fee_eur || 0);
+    const gross = Number(grossAmount || 0);
+    const split = Number(splitBase || 0);
+    const fee = Number(platformFee || 0);
 
-    const owner = round2(net * 0.75);
-    const commission = round2(net * 0.25 + CF_EUR);
+    const ownerAmount = round2(split * 0.75);
+    const commissionAmount = round2(split * 0.25 + CF_EUR);
 
     return {
         platform,
         gross_eur: round2(gross),          // unos (bez CF)
-        net_eur: round2(net),              // ✅ NET nama (bez CF)
+        net_eur: round2(split),            // ✅ splitBase (bez CF)
         booking_fee_eur: round2(fee),      // ✅ platform fee (Booking ili Airbnb)
-        owner_eur: owner,
-        commission_eur: commission,
+        owner_eur: ownerAmount,
+        commission_eur: commissionAmount,
     };
 }
 
 async function upsertNCommission(year, month, details) {
     const existing = await dbGetOneByIndex("n_commission", "by_period", [year, month]);
 
-    const prevNet = Number(existing?.incomeN_eur_total || 0);
+    const prevSplit = Number(existing?.incomeN_eur_total || 0);
     const prevOwner = Number(existing?.owner_eur || 0) || 0;
     const prevComm = Number(existing?.commission_eur || 0) || 0;
     const prevFee = Number(existing?.booking_fee_eur || 0) || 0;
 
-    const netDelta = Number(details?.net_eur || 0);
+    const splitDelta = Number(details?.net_eur || 0);
     const ownerDelta = Number(details?.owner_eur || 0) || 0;
     const commDelta = Number(details?.commission_eur || 0) || 0;
     const feeDelta = Number(details?.booking_fee_eur || 0) || 0;
@@ -272,8 +274,8 @@ async function upsertNCommission(year, month, details) {
         year,
         month,
 
-        // ovo je NET koji ostaje "nama" (payout / net after fee)
-        incomeN_eur_total: round2(prevNet + netDelta),
+        // ovo je splitBase koji ostaje "nama" za raspodjelu
+        incomeN_eur_total: round2(prevSplit + splitDelta),
 
         // platform fee (booking fee ili airbnb fee)
         booking_fee_eur: round2(prevFee + feeDelta),
@@ -286,7 +288,7 @@ async function upsertNCommission(year, month, details) {
     });
 }
 
-function computeNetForNItem(item) {
+function computeSplitBaseForNItem(item) {
     return Number(item.amount_eur || 0) || 0;
 }
 
@@ -306,15 +308,15 @@ async function rebuildNCommissionForPeriod(year, month) {
 
     for (const it of nItems) {
         const platform = String(it.platform || "").toLowerCase();
-        const net = computeNetForNItem(it);
+        const splitBase = computeSplitBaseForNItem(it);
 
-        if (!Number.isFinite(net) || net <= 0) continue;
+        if (!Number.isFinite(splitBase) || splitBase <= 0) continue;
 
         const fee = Number(it.platform_fee_eur || 0) || 0;
-        const owner = round2(net * 0.75);
-        const commission = round2(net * 0.25 + CF_EUR);
+        const owner = round2(splitBase * 0.75);
+        const commission = round2(splitBase * 0.25 + CF_EUR);
 
-        incomeNTotal += net;
+        incomeNTotal += splitBase;
         bookingFeeTotal += fee;
         ownerTotal += owner;
         commissionTotal += commission;
@@ -435,10 +437,10 @@ async function handleAddIncomeItem() {
     const platform = (els.incAddPlatform?.value || "").toLowerCase();
     const isN = apartment === "N";
 
-    let amountEur = 0;            // income_items.amount_eur (A/Z prihod; za N čuvamo NET koji ostaje nama)
-    let grossReservationEur = 0;  // relevantno: Booking (gross) i N+Airbnb (gross reservation)
-    let platformFeeEur = 0;       // relevantno: Booking fee (svima), Airbnb fee (samo N)
-    let netToUsEur = 0;           // relevantno za N: net koji ostaje nama (payout / net after fee)
+    let amountToStore = 0;         // income_items.amount_eur (A/Z prihod; za N čuvamo splitBase)
+    let grossAmount = 0;          // relevantno: Booking (gross) i N+Airbnb (gross reservation)
+    let platformFee = 0;          // relevantno: Booking fee (svima), Airbnb fee (samo N)
+    let splitBase = 0;            // relevantno za N: osnovica koja se dijeli 75/25
 
     // --- VRBO ---
     if (platform === "vrbo") {
@@ -449,23 +451,31 @@ async function handleAddIncomeItem() {
         if (!Number.isFinite(rate) || rate <= 0) return alert("Unesi kurs USD→EUR (ili klikni ↻ Kurs).");
 
         const grossEur = usd * rate;           // ✅ konvertovani payout = GROSS u EUR
-        platformFeeEur = 0;                    // ✅ VRBO fee (u tvom modelu) 0
+        platformFee = 0;                       // ✅ VRBO fee (u tvom modelu) 0
 
         if (isN) {
-            const poolEur = grossEur - CF_EUR;   // ✅ NET nama za raspodjelu (bez CF)
-
-            if (!(Number.isFinite(poolEur) && poolEur > 0)) {
-                return alert("NET za N mora biti > 0 (provjeri iznos/kurs).");
+            let calculation;
+            try {
+                calculation = calculateManagedReservation({
+                    platform: Platforms.VRBO,
+                    amountUsd: usd,
+                    fxUsdEur: rate,
+                    // TODO Phase 2:
+                    // koristiti cleaning fee iz commission_rules
+                    cleaningFee: CF_EUR,
+                });
+            } catch (error) {
+                return alert(error?.message || "NET za N mora biti > 0 (provjeri iznos/kurs).");
             }
 
-            amountEur = poolEur;                // ✅ income_items.amount_eur (bez CF) -> ide u owner PDF
-            netToUsEur = poolEur;               // ✅ n_commission baziraj na pool-u (bez CF)
-
-            grossReservationEur = grossEur;     // ✅ income_items.gross_eur = konvertovani payout
+            amountToStore = calculation.splitBase;
+            splitBase = calculation.splitBase;
+            grossAmount = calculation.grossAmount;
+            platformFee = calculation.platformFee;
         } else {
             // A/Z: VRBO tretiraj kao normalan prihod (nema CF logike)
-            amountEur = grossEur;
-            grossReservationEur = grossEur;     // opcionalno, ali korisno da gross_eur nije null
+            amountToStore = grossEur;
+            grossAmount = grossEur;     // opcionalno, ali korisno da gross_eur nije null
         }
     }
 
@@ -482,17 +492,30 @@ async function handleAddIncomeItem() {
         const netForApt = gross - fee;
         if (!(Number.isFinite(netForApt) && netForApt > 0)) return alert("NET mora biti > 0 (provjeri fee).");
 
-        grossReservationEur = gross;
-        platformFeeEur = fee;
+        grossAmount = gross;
+        platformFee = fee;
 
         if (isN) {
-            const netN = gross - fee - CF_EUR;
-            if (!(Number.isFinite(netN) && netN > 0)) return alert("NET za N mora biti > 0 (provjeri fee).");
+            let calculation;
+            try {
+                calculation = calculateManagedReservation({
+                    platform: Platforms.BOOKING,
+                    grossAmount: gross,
+                    platformFee: fee,
+                    // TODO Phase 2:
+                    // koristiti cleaning fee iz commission_rules
+                    cleaningFee: CF_EUR,
+                });
+            } catch (error) {
+                return alert(error?.message || "NET za N mora biti > 0 (provjeri fee).");
+            }
 
-            amountEur = netN;     // ✅ u items za N čuvamo NET nama (bez CF)
-            netToUsEur = netN;    // ✅ u n_commission ide NET nama (bez CF)
+            amountToStore = calculation.splitBase;
+            splitBase = calculation.splitBase;
+            grossAmount = calculation.grossAmount;
+            platformFee = calculation.platformFee;
         } else {
-            amountEur = netForApt; // ✅ A/Z
+            amountToStore = netForApt; // ✅ A/Z
         }
     }
 
@@ -502,34 +525,37 @@ async function handleAddIncomeItem() {
         if (!Number.isFinite(eur) || eur <= 0) return alert("Unesi ispravan iznos (EUR).");
 
         // ✅ N + Airbnb: unos = reservation price (bez CF)
-        if (platform === "airbnb" && isN) {
-            // Unos (eur) = cijena rezervacije BEZ cleaning fee (CF)
-            grossReservationEur = eur;
-
-            // Airbnb fee se računa na (rezervacija + CF)
-            platformFeeEur = (grossReservationEur + CF_EUR) * 0.03;
-
-            // ✅ Ispravno: payout (NET nama) uključuje i CF, pa tek poslije raspodjela skida CF
-            const payoutNetToUs = (grossReservationEur) - platformFeeEur;
-
-            if (!Number.isFinite(payoutNetToUs) || payoutNetToUs <= 0) {
-                return alert("NET mora biti > 0 (provjeri unos).");
+        if (platform === Platforms.AIRBNB && isN) {
+            let calculation;
+            try {
+                calculation = calculateManagedReservation({
+                    platform: Platforms.AIRBNB,
+                    feeModel: FeeModels.SPLIT_FEE,
+                    grossAmount: eur,
+                    // TODO Phase 2:
+                    // koristiti cleaning fee iz commission_rules
+                    cleaningFee: CF_EUR,
+                });
+            } catch (error) {
+                return alert(error?.message || "NET mora biti > 0 (provjeri unos).");
             }
 
-            // Za N u items čuvamo NET nama (payout), ne net bez CF
-            amountEur = payoutNetToUs;
-            netToUsEur = payoutNetToUs;
+            amountToStore = calculation.splitBase;
+            splitBase = calculation.splitBase;
+            grossAmount = calculation.grossAmount;
+            platformFee = calculation.platformFee;
         }
 
         else {
             // ✅ A/Z Airbnb/direct/other: unos = kompletan prihod
-            amountEur = eur;
+            amountToStore = eur;
 
-            // ✅ N direct/other: tretiraj kao net koji ostaje nama
+            // Direct/Other nema platform fee.
+            // CF se prvo izdvaja, ostatak ide u raspodjelu.
             if (isN) {
-                netToUsEur = eur - CF_EUR; // prvo oduzmi CF, pa raspodjeli
-                platformFeeEur = 0;
-                grossReservationEur = 0;
+                splitBase = eur - CF_EUR; // prvo oduzmi CF, pa raspodjeli
+                platformFee = 0;
+                grossAmount = 0;
             }
         }
     }
@@ -573,13 +599,17 @@ async function handleAddIncomeItem() {
         month: period.month,
         apartment,
         platform,
+        feeModel:
+            platform === Platforms.AIRBNB && isN
+                ? FeeModels.SPLIT_FEE
+                : null,
 
-        // NET koji se knjiži za A/Z; za N čuvamo net koji ostaje nama
-        amount_eur: round2(amountEur),
+        // Vrijednost koja se knjiži u income_items; za N čuvamo splitBase
+        amount_eur: round2(amountToStore),
 
         // Future/debug fields (ne traže DB migraciju)
-        gross_eur: Number.isFinite(grossReservationEur) ? round2(grossReservationEur) : null,
-        platform_fee_eur: Number.isFinite(platformFeeEur) ? round2(platformFeeEur) : null,
+        gross_eur: Number.isFinite(grossAmount) ? round2(grossAmount) : null,
+        platform_fee_eur: Number.isFinite(platformFee) ? round2(platformFee) : null,
 
         // VRBO FX info
         currency: platform === "vrbo" ? "USD" : "EUR",
@@ -626,9 +656,9 @@ async function handleAddIncomeItem() {
         } else if (isN) {
             const details = calcNBreakdown({
                 platform,
-                gross_reservation_eur: grossReservationEur,
-                net_to_us_eur: netToUsEur,
-                platform_fee_eur: platformFeeEur,
+                grossAmount,
+                splitBase,
+                platformFee,
             });
             await upsertNCommission(period.year, period.month, details);
         }
