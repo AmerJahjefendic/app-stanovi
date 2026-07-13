@@ -62,8 +62,10 @@ export function makeCommissionRuleId(
  * Pronalazi commission rule po:
  * apartmentId + platform + feeModel.
  *
- * Za Airbnb SINGLE_FEE pravilo podržava legacy fallback
+ * Za Airbnb SPLIT_FEE pravilo podržava legacy fallback
  * N_AIRBNB_DEFAULT radi kompatibilnosti sa Fazom 1.
+ *
+ * SINGLE_FEE mora imati zasebno eksplicitno pravilo.
  *
  * SPLIT_FEE obračun ne treba Cleaning Fee iz ovog pravila,
  * ali lookup može vratiti zapis radi administracije i kompatibilnosti.
@@ -126,28 +128,52 @@ export async function findCommissionRule({
 }
 
 /**
- * Vraća validan Cleaning Fee za Airbnb SINGLE_FEE.
- *
- * Za SPLIT_FEE se ova funkcija ne koristi jer je CF uvijek fiksnih 10 EUR.
+ * Vraća commission konfiguraciju za apartment/platform/feeModel kombinaciju.
  *
  * @param {Object} params
  * @param {string} params.apartmentId
- * @returns {Promise<number|null>}
+ * @param {string} params.platform
+ * @param {string} [params.feeModel]
+ * @returns {Promise<{platformFeePct:number|null,cleaningFeeEur:number|null}|null>}
  */
-export async function getAirbnbSingleFeeCleaningFee({
+export async function getCommissionConfig({
   apartmentId,
+  platform,
+  feeModel,
 } = {}) {
   const rule = await findCommissionRule({
     apartmentId,
-    platform: Platforms.AIRBNB,
-    feeModel: FeeModels.SINGLE_FEE,
+    platform,
+    feeModel,
   });
 
-  const cleaningFee = Number(rule?.cleaningFeeEur);
+  if (!rule) {
+    return null;
+  }
 
-  return Number.isFinite(cleaningFee) && cleaningFee > 0
-    ? cleaningFee
-    : null;
+  const platformFeePct = Number(rule?.platformFeePct);
+  const cleaningFeeEur = Number(rule?.cleaningFeeEur);
+
+  const normalizedFeeModel =
+    normalizePlatform(platform) === Platforms.AIRBNB
+      ? normalizeAirbnbFeeModel(feeModel)
+      : null;
+
+  if (
+    normalizedFeeModel === FeeModels.SINGLE_FEE &&
+    (!Number.isFinite(cleaningFeeEur) || cleaningFeeEur <= 0)
+  ) {
+    return null;
+  }
+
+  return {
+    platformFeePct: Number.isFinite(platformFeePct)
+      ? platformFeePct
+      : null,
+    cleaningFeeEur: Number.isFinite(cleaningFeeEur)
+      ? cleaningFeeEur
+      : null,
+  };
 }
 
 /**
@@ -157,17 +183,14 @@ export async function getAirbnbSingleFeeCleaningFee({
  * @param {Object} params
  * @param {string} params.apartmentId
  * @param {number|string} params.cleaningFeeEur
- * @param {number|string} [params.agencyPct=25]
  * @returns {Promise<Object>}
  */
 export async function saveAirbnbSingleFeeRule({
   apartmentId,
   cleaningFeeEur,
-  agencyPct = 25,
 } = {}) {
   const apartment = normalizeApartmentId(apartmentId);
   const cleaningFee = Number(cleaningFeeEur);
-  const agency = Number(agencyPct);
 
   if (!apartment) {
     throw new Error("Apartment ID je obavezan.");
@@ -175,10 +198,6 @@ export async function saveAirbnbSingleFeeRule({
 
   if (!Number.isFinite(cleaningFee) || cleaningFee <= 0) {
     throw new Error("Cleaning Fee mora biti broj veći od 0.");
-  }
-
-  if (!Number.isFinite(agency) || agency <= 0 || agency >= 100) {
-    throw new Error("Agencijska provizija mora biti između 0 i 100%.");
   }
 
   const existingRule = await findCommissionRule({
@@ -207,8 +226,6 @@ export async function saveAirbnbSingleFeeRule({
     feeModel: FeeModels.SINGLE_FEE,
     platformFeePct: 15.5,
     cleaningFeeEur: cleaningFee,
-    agencyPct: agency,
-    ownerPct: 100 - agency,
     isDefault: true,
     createdAt: reusableExistingRule?.createdAt || now,
     updatedAt: now,
