@@ -12,7 +12,17 @@ import {
     OWNER_TYPE,
 } from "../shared/apartments.service.js";
 
-import { GROUP_IDS, ALLOWED_NEW_GROUPS } from "../shared/constants.js";
+import {
+    getCommissionConfig,
+    saveAirbnbSingleFeeRule,
+} from "../shared/commission-rules.service.js";
+
+import {
+    GROUP_IDS,
+    ALLOWED_NEW_GROUPS,
+    FeeModels,
+    Platforms,
+} from "../shared/constants.js";
 import { cleanStr } from "../shared/utils.js";
 
 import { dbGetAll } from "../db/db.js";
@@ -45,6 +55,8 @@ const els = {
   isActive: document.getElementById("aptIsActive"),
 
   agencyRow: document.getElementById("agencyRow"),
+  airbnbSettingsRow: document.getElementById("airbnbSettingsRow"),
+  cleaningFee: document.getElementById("aptCleaningFee"),
 
   shareSetWrap: document.getElementById("shareSetWrap"),
   shareKey: document.getElementById("aptShareKey"),
@@ -123,7 +135,9 @@ function isManagedOwnerType(ownerType) {
  */
 function applyAgencyUI() {
     const managed = isManagedOwnerType(els.aptOwnerType.value);
+
     els.agencyRow?.classList.toggle("is-hidden", !managed);
+    els.airbnbSettingsRow?.classList.toggle("is-hidden", !managed);
 }
 
 /**
@@ -242,6 +256,7 @@ function resetForm() {
 
     els.aptOwnerType.value = OWNER_TYPE.OWNED;
     els.agencyPct.value = "";
+    if (els.cleaningFee) els.cleaningFee.value = "";
     if (els.ownerName) els.ownerName.value = "";
 
     els.sort.value = "";
@@ -406,6 +421,16 @@ async function handleEdit(id) {
         const row = await apartmentsGet(id);
         if (!row) return setMsg(els.msgBox, "warn", `Apartman "${id}" ne postoji.`);
 
+        let singleFeeConfig = null;
+
+        if (isManagedOwnerType(row.ownerType)) {
+            singleFeeConfig = await getCommissionConfig({
+                apartmentId: row.id,
+                platform: Platforms.AIRBNB,
+                feeModel: FeeModels.SINGLE_FEE,
+            });
+        }
+
         els.editMode.value = "edit";
         els.id.disabled = true;
 
@@ -422,8 +447,23 @@ async function handleEdit(id) {
         // ✅ set value nakon rebuild-a
         if (row.groupId) els.aptGroup.value = row.groupId;
         
-        els.agencyPct.value = (row.agencyPct === null || row.agencyPct === undefined) ? "" : String(row.agencyPct);
-        els.sort.value = (row.sort === null || row.sort === undefined) ? "" : String(row.sort);
+        els.agencyPct.value =
+            row.agencyPct === null || row.agencyPct === undefined
+                ? ""
+                : String(row.agencyPct);
+
+        if (els.cleaningFee) {
+            els.cleaningFee.value =
+                singleFeeConfig?.cleaningFeeEur === null ||
+                singleFeeConfig?.cleaningFeeEur === undefined
+                    ? ""
+                    : String(singleFeeConfig.cleaningFeeEur);
+        }
+
+        els.sort.value =
+            row.sort === null || row.sort === undefined
+                ? ""
+                : String(row.sort);
         els.isActive.checked = row.isActive !== false;
         if (els.ownerName) els.ownerName.value = row.ownerName || "";
         
@@ -494,13 +534,38 @@ async function handleSaveClick() {
             shareKey: isOwnedSharedGroupId(els.aptGroup.value) ? (els.shareKey?.value || "") : "",
         };
 
+        const managed = isManagedOwnerType(payload.ownerType);
+        const cleaningFeeEur = Number(els.cleaningFee?.value);
+
+        if (
+            managed &&
+            (!Number.isFinite(cleaningFeeEur) || cleaningFeeEur <= 0)
+        ) {
+            throw new Error(
+                "Za MANAGED apartman moraš unijeti Airbnb Cleaning Fee veći od 0 EUR."
+            );
+        }
+
         if (mode === "create") {
             await apartmentsCreate(payload);
-            setMsg(els.msgBox, "ok", `Apartman "${payload.id}" kreiran.`);
         } else {
             await apartmentsUpdate(payload.id, payload);
-            setMsg(els.msgBox, "ok", `Apartman "${payload.id}" ažuriran.`);
         }
+
+        if (managed) {
+            await saveAirbnbSingleFeeRule({
+                apartmentId: payload.id,
+                cleaningFeeEur,
+            });
+        }
+
+        setMsg(
+            els.msgBox,
+            "ok",
+            mode === "create"
+                ? `Apartman "${payload.id}" kreiran.`
+                : `Apartman "${payload.id}" ažuriran.`
+        );
 
         await refreshTable();
         closeModal();

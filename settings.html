@@ -126,6 +126,29 @@
                             <label>Ime vlasnika (samo MANAGED)</label>
                             <input id="aptOwnerName" type="text" autocomplete="off" />
                         </div>
+
+                        <div
+                            id="airbnbSettingsRow"
+                            class="field"
+                            style="flex:1; min-width:220px;"
+                        >
+                            <label for="aptCleaningFee">
+                                Airbnb Cleaning Fee (EUR)
+                            </label>
+
+                            <input
+                                id="aptCleaningFee"
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                inputmode="decimal"
+                                placeholder="npr. 15"
+                            />
+
+                            <small>
+                                Koristi se samo za Airbnb Single Fee. Split Fee uvijek koristi fiksnih 10 €.
+                            </small>
+                        </div>
                     </div>
                 </div>
 
