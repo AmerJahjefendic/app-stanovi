@@ -20,6 +20,8 @@ const els = {
     incAddApt: document.getElementById("incAddApt"),
     incAddAmount: document.getElementById("incAddAmount"),
     incAddPlatform: document.getElementById("incAddPlatform"),
+    feeModelWrap: document.getElementById("feeModelWrap"),
+    incAddFeeModel: document.getElementById("incAddFeeModel"),
     incAddPaid: document.getElementById("incAddPaid"),
     incAddCheckin: document.getElementById("incAddCheckin"),
     incAddCheckout: document.getElementById("incAddCheckout"),
@@ -150,6 +152,26 @@ function toggleFieldsByPlatform() {
     }
 }
 
+function toggleFeeModelField() {
+    const apartment = els.incAddApt?.value || "";
+    const platform = String(
+        els.incAddPlatform?.value || ""
+    ).toLowerCase();
+
+    const show =
+        apartment === "N" &&
+        platform === Platforms.AIRBNB;
+
+    els.feeModelWrap?.classList.toggle(
+        "is-hidden",
+        !show
+    );
+
+    if (!show && els.incAddFeeModel) {
+        els.incAddFeeModel.value = FeeModels.SINGLE_FEE;
+    }
+}
+
 function toggleFieldsByApartment() {
     const apt = els.incAddApt?.value || "A";
     const isN = apt === "N";
@@ -182,6 +204,11 @@ function resetIncomeForm({ keepApt = true, keepPlatform = true } = {}) {
     if (els.incAddAmountUsd) els.incAddAmountUsd.value = "";
     if (els.incAddFxRate) els.incAddFxRate.value = "";
     if (els.incAddBookingFee) els.incAddBookingFee.value = "";
+
+    if (els.incAddFeeModel) {
+        els.incAddFeeModel.value = FeeModels.SINGLE_FEE;
+    }
+
     if (els.incAddCheckin) els.incAddCheckin.value = "";
     if (els.incAddCheckout) els.incAddCheckout.value = "";
     if (els.incAddNights) els.incAddNights.value = "";
@@ -192,6 +219,7 @@ function resetIncomeForm({ keepApt = true, keepPlatform = true } = {}) {
 
     toggleFieldsByPlatform();
     toggleFieldsByApartment();
+    toggleFeeModelField();
     if (els.incAddPaid) els.incAddPaid.checked = (els.incAddPlatform?.value === "airbnb");
 }
 
@@ -200,6 +228,7 @@ function openModal() {
     els.modal?.setAttribute("aria-hidden", "false");
     toggleFieldsByPlatform();
     toggleFieldsByApartment();
+    toggleFeeModelField();
 
     // focus first input
     setTimeout(() => {
@@ -361,6 +390,12 @@ async function openIncomeItemForEdit(id) {
         els.incAddPlatform.dispatchEvent(new Event("change"));
     }
     const platform = String(item.platform || "").toLowerCase();
+    if (els.incAddFeeModel) {
+        els.incAddFeeModel.value =
+            item.feeModel === FeeModels.SINGLE_FEE
+                ? FeeModels.SINGLE_FEE
+                : FeeModels.SPLIT_FEE;
+    }
     if (els.incAddAmount) {
         if (platform === "booking") {
             els.incAddAmount.value = item.gross_eur ?? item.amount_eur ?? "";
@@ -386,6 +421,7 @@ async function openIncomeItemForEdit(id) {
         els.btnAddIncomeItem.textContent = "Sačuvaj izmjenu";
     }
     toggleFieldsByApartment();
+    toggleFeeModelField();
     if (els.incAddPaid) {
         els.incAddPaid.checked = !!item.paid;
     }
@@ -932,7 +968,10 @@ function attach() {
         await withLoading(async () => { await render(); });
     });
 
-    els.incAddApt?.addEventListener("change", toggleFieldsByApartment);
+    els.incAddApt?.addEventListener("change", () => {
+        toggleFieldsByApartment();
+        toggleFeeModelField();
+    });
 
     els.calendar?.addEventListener("click", async (e) => {
         const yearClick = e.target.closest("[data-cal='year']");
@@ -993,6 +1032,7 @@ function attach() {
 
     els.incAddPlatform?.addEventListener("change", async () => {
         toggleFieldsByPlatform();
+        toggleFeeModelField();
 
         if (els.incAddPlatform.value === "vrbo") {
             if (state.editingIncomeItemId) return;

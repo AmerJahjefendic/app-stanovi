@@ -122,6 +122,19 @@
           </select>
         </div>
 
+        <div id="feeModelWrap" class="field is-hidden">
+          <label for="incAddFeeModel">Fee Model</label>
+
+          <select id="incAddFeeModel">
+            <option value="SINGLE_FEE">Single Fee (recommended)</option>
+            <option value="SPLIT_FEE">Split Fee (legacy)</option>
+          </select>
+
+          <small class="note">
+            Single Fee je trenutni Airbnb model. Split Fee koristi se za starije rezervacije.
+          </small>
+        </div>
+
         <div id="bookingFeeWrap" class="field is-hidden">
           <label>Booking fee (EUR)</label>
           <input id="incAddBookingFee" type="number" step="0.01" min="0" placeholder="npr 98.40" />
