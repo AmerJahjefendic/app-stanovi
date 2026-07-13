@@ -59,6 +59,15 @@ function buildResult({
   };
 }
 
+/**
+ * Calculate AIRBNB reservation using SPLIT_FEE model.
+ *
+ * @param {Object} [params]
+ * @param {number} params.grossAmount Reservation amount without cleaning fee.
+ * @param {number} [params.agencyShare=0.25] Agency share as decimal.
+ * @param {number} [params.ownerShare=0.75] Owner share as decimal.
+ * @returns {{platform:string,feeModel:string|null,grossAmount:number,cleaningFee:number,platformFee:number,payoutAmount:number,splitBase:number,ownerAmount:number,agencyAmount:number}}
+ */
 export function calculateAirbnbSplitFee({
   grossAmount,
   agencyShare = DEFAULT_AGENCY_SHARE,
@@ -94,6 +103,16 @@ export function calculateAirbnbSplitFee({
   });
 }
 
+/**
+ * Calculate AIRBNB reservation using SINGLE_FEE model.
+ *
+ * @param {Object} [params]
+ * @param {number} params.grossAmount Reservation amount without cleaning fee.
+ * @param {number} params.cleaningFee Cleaning fee that must be provided.
+ * @param {number} [params.agencyShare=0.25] Agency share as decimal.
+ * @param {number} [params.ownerShare=0.75] Owner share as decimal.
+ * @returns {{platform:string,feeModel:string|null,grossAmount:number,cleaningFee:number,platformFee:number,payoutAmount:number,splitBase:number,ownerAmount:number,agencyAmount:number}}
+ */
 export function calculateAirbnbSingleFee({
   grossAmount,
   cleaningFee,
@@ -119,6 +138,17 @@ export function calculateAirbnbSingleFee({
   });
 }
 
+/**
+ * Calculate BOOKING reservation for managed apartment flow.
+ *
+ * @param {Object} [params]
+ * @param {number} params.grossAmount Gross reservation amount.
+ * @param {number} params.platformFee Booking platform fee.
+ * @param {number} [params.cleaningFee=10] Cleaning fee in EUR.
+ * @param {number} [params.agencyShare=0.25] Agency share as decimal.
+ * @param {number} [params.ownerShare=0.75] Owner share as decimal.
+ * @returns {{platform:string,feeModel:string|null,grossAmount:number,cleaningFee:number,platformFee:number,payoutAmount:number,splitBase:number,ownerAmount:number,agencyAmount:number}}
+ */
 export function calculateBooking({
   grossAmount,
   platformFee,
@@ -144,6 +174,17 @@ export function calculateBooking({
   });
 }
 
+/**
+ * Calculate VRBO reservation from USD amount and FX rate.
+ *
+ * @param {Object} [params]
+ * @param {number} params.amountUsd Reservation amount in USD.
+ * @param {number} params.fxUsdEur USD to EUR exchange rate.
+ * @param {number} [params.cleaningFee=10] Cleaning fee in EUR.
+ * @param {number} [params.agencyShare=0.25] Agency share as decimal.
+ * @param {number} [params.ownerShare=0.75] Owner share as decimal.
+ * @returns {{platform:string,feeModel:string|null,grossAmount:number,cleaningFee:number,platformFee:number,payoutAmount:number,splitBase:number,ownerAmount:number,agencyAmount:number}}
+ */
 export function calculateVrbo({
   amountUsd,
   fxUsdEur,
@@ -171,6 +212,15 @@ export function calculateVrbo({
   });
 }
 
+/**
+ * Dispatch managed reservation calculation by platform and fee model.
+ *
+ * @param {Object} [params]
+ * @param {string} params.platform Platform identifier (airbnb, booking, vrbo).
+ * @param {string} [params.feeModel] Airbnb fee model, defaults to SPLIT_FEE.
+ * @param {...any} [params.input] Remaining calculator-specific fields.
+ * @returns {{platform:string,feeModel:string|null,grossAmount:number,cleaningFee:number,platformFee:number,payoutAmount:number,splitBase:number,ownerAmount:number,agencyAmount:number}}
+ */
 export function calculateManagedReservation({ platform, feeModel, ...input } = {}) {
   const normalizedPlatform = String(platform || "").trim().toLowerCase();
 
