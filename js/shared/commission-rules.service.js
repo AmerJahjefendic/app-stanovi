@@ -23,6 +23,10 @@ function normalizePlatform(value) {
 }
 
 /**
+ * Sva commission pravila prolaze isključivo kroz ovaj servis.
+
+ * Ne pristupati commission_rules store direktno iz UI koda.
+
  * Stari Airbnb zapisi bez feeModel uvijek se tretiraju kao SPLIT_FEE.
  * Nepoznata vrijednost također ne smije slučajno aktivirati SINGLE_FEE.
  *

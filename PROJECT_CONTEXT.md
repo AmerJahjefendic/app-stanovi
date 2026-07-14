@@ -258,6 +258,24 @@ Arhitekturna pravila
 
 ✅ ui.js = render funkcije (bez biznis logike)
 
+---
+
+## MANAGED Airbnb Fee Models
+
+### Split Fee
+- ulaz = Airbnb payout
+- CF = 10 €
+- payout − CF
+- 75/25
+
+### Single Fee
+- ulaz = reservation amount
+- CF = Settings
+- Airbnb fee = 15.5%
+- payout
+- payout − CF
+- 75/25
+
 ✅ metrics.service.js = SVA računica (single source of truth)
 
 ✅ shared/ je strogo bez DOM-a (osim ui.js)
