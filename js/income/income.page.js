@@ -4,6 +4,15 @@ import { keyFromPeriod, periodKeyToYM, safeDate } from "../shared/utils.js";
 import { debug } from "../shared/log.js";
 import { FeeModels, Platforms } from "../shared/constants.js";
 import { calculateManagedReservation } from "../shared/managed-income-calculator.js";
+import {
+    buildReservationFinancial,
+    buildReservationFinancials,
+    getReservationSegmentForPeriod,
+} from "../shared/reservation-financial.service.js";
+import {
+    buildIncomePeriodView,
+    computeIncomePeriodTotals,
+} from "../shared/income-period-view.service.js";
 import { getCommissionConfig } from "../shared/commission-rules.service.js";
 import { renderYearCalendar, withLoading } from "../shared/ui.js";
 import { periodLabel } from "../shared/parseFilename.js";
@@ -26,7 +35,6 @@ const els = {
     incAddPaid: document.getElementById("incAddPaid"),
     incAddCheckin: document.getElementById("incAddCheckin"),
     incAddCheckout: document.getElementById("incAddCheckout"),
-    incAddNights: document.getElementById("incAddNights"),
     incAddNote: document.getElementById("incAddNote"),
     btnAddIncomeItem: document.getElementById("btnAddIncomeItem"),
 
@@ -41,7 +49,6 @@ const els = {
 
     eurWrap: document.getElementById("eurWrap"),
     datesWrap: document.getElementById("datesWrap"),
-    nightsWrap: document.getElementById("nightsWrap"),
 
     calendar: document.getElementById("incCalendar"),
     status: document.getElementById("incStatus"),
@@ -63,8 +70,6 @@ const state = {
 };
 
 const CF_EUR = 10;
-const COMM = 0.25;
-
 // ---------- helpers ----------
 
 function round2(x) {
@@ -75,40 +80,6 @@ function normalizeAirbnbFeeModel(value) {
     return value === FeeModels.SINGLE_FEE
         ? FeeModels.SINGLE_FEE
         : FeeModels.SPLIT_FEE;
-}
-
-function getItemCleaningFee(item) {
-    const platform = String(item?.platform || "").trim().toLowerCase();
-
-    if (platform === Platforms.AIRBNB) {
-        const feeModel = normalizeAirbnbFeeModel(item?.feeModel);
-
-        if (feeModel === FeeModels.SINGLE_FEE) {
-            const cleaningFee = Number(item?.cleaningFeeEur);
-
-            return Number.isFinite(cleaningFee) && cleaningFee > 0
-                ? cleaningFee
-                : null;
-        }
-
-        return 10;
-    }
-
-    const rawCleaningFee = item?.cleaningFeeEur;
-
-    if (
-        rawCleaningFee === null ||
-        rawCleaningFee === undefined ||
-        rawCleaningFee === ""
-    ) {
-        return 10;
-    }
-
-    const storedCleaningFee = Number(rawCleaningFee);
-
-    return Number.isFinite(storedCleaningFee) && storedCleaningFee >= 0
-        ? storedCleaningFee
-        : 10;
 }
 
 function todayISO() {
@@ -217,9 +188,8 @@ function toggleFieldsByApartment() {
     const apt = els.incAddApt?.value || "A";
     const isN = apt === "N";
 
-    // N: datumi obavezni, nights sakrij i disable
+    // Period boravka se za sve apartmane unosi kroz Check-in i Check-out.
     els.datesWrap?.classList.toggle("is-hidden", false);
-    els.nightsWrap?.classList.toggle("is-hidden", isN);
 
     if (els.incAddCheckin) {
         els.incAddCheckin.required = isN;
@@ -230,10 +200,6 @@ function toggleFieldsByApartment() {
         els.incAddCheckout.disabled = false;
     }
 
-    if (els.incAddNights) {
-        els.incAddNights.disabled = isN;
-        if (isN) els.incAddNights.value = "";
-    }
 }
 
 function resetIncomeForm({ keepApt = true, keepPlatform = true } = {}) {
@@ -252,7 +218,6 @@ function resetIncomeForm({ keepApt = true, keepPlatform = true } = {}) {
 
     if (els.incAddCheckin) els.incAddCheckin.value = "";
     if (els.incAddCheckout) els.incAddCheckout.value = "";
-    if (els.incAddNights) els.incAddNights.value = "";
     if (els.incAddNote) els.incAddNote.value = "";
 
     if (!keepPlatform && els.incAddPlatform) els.incAddPlatform.value = "airbnb";
@@ -301,92 +266,37 @@ async function ensureImportPeriod(year, month) {
     });
 }
 
-// ---------- N breakdown + upsert ----------
-// booking_fee_eur u n_commission = platformFee (Booking fee ili Airbnb fee), VRBO=0
-function calcNBreakdown({
-    platform,
-    grossAmount = 0,       // unos rezervacije (bez CF) za Airbnb/Booking
-    splitBase = 0,         // osnovica koja se dijeli 75/25
-    platformFee = 0,        // booking fee ili airbnb fee
-    cleaningFee = 10,
-}) {
-    const gross = Number(grossAmount || 0);
-    const split = Number(splitBase || 0);
-    const fee = Number(platformFee || 0);
-    const cf = Number(cleaningFee);
-
-    const ownerAmount = round2(split * 0.75);
-    const commissionAmount = round2(split * 0.25 + cf);
-
-    return {
-        platform,
-        gross_eur: round2(gross),          // unos (bez CF)
-        net_eur: round2(split),            // ✅ splitBase (bez CF)
-        booking_fee_eur: round2(fee),      // ✅ platform fee (Booking ili Airbnb)
-        owner_eur: ownerAmount,
-        commission_eur: commissionAmount,
-    };
-}
-
-async function upsertNCommission(year, month, details) {
-    const existing = await dbGetOneByIndex("n_commission", "by_period", [year, month]);
-
-    const prevSplit = Number(existing?.incomeN_eur_total || 0);
-    const prevOwner = Number(existing?.owner_eur || 0) || 0;
-    const prevComm = Number(existing?.commission_eur || 0) || 0;
-    const prevFee = Number(existing?.booking_fee_eur || 0) || 0;
-
-    const splitDelta = Number(details?.net_eur || 0);
-    const ownerDelta = Number(details?.owner_eur || 0) || 0;
-    const commDelta = Number(details?.commission_eur || 0) || 0;
-    const feeDelta = Number(details?.booking_fee_eur || 0) || 0;
-
-    await dbPutOne("n_commission", {
-        id: existing?.id || `ncomm_${year}_${String(month).padStart(2, "0")}`,
-        year,
-        month,
-
-        // ovo je splitBase koji ostaje "nama" za raspodjelu
-        incomeN_eur_total: round2(prevSplit + splitDelta),
-
-        // platform fee (booking fee ili airbnb fee)
-        booking_fee_eur: round2(prevFee + feeDelta),
-
-        owner_eur: round2(prevOwner + ownerDelta),
-        commission_eur: round2(prevComm + commDelta),
-
-        platform: details?.platform || existing?.platform || null,
-        updated_at: new Date().toISOString(),
-    });
-}
-
-function computeSplitBaseForNItem(item) {
-    const amount = Number(item?.amount_eur || 0) || 0;
-    const platform = String(item?.platform || "").trim().toLowerCase();
-
-    if (
-        platform === Platforms.DIRECT ||
-        platform === Platforms.OTHER
-    ) {
-        const cleaningFee = getItemCleaningFee(item);
-
-        if (!Number.isFinite(cleaningFee)) {
-            return NaN;
-        }
-
-        return amount - cleaningFee;
+// ---------- reservation allocation helpers ----------
+function getIncomeItemAllocation(item) {
+    try {
+        return buildReservationFinancial(item);
+    } catch (error) {
+        console.warn("Income stay allocation skipped", item?.id, error);
+        return null;
     }
+}
 
-    return amount;
+function getIncomeItemPeriodKeys(item) {
+    return getIncomeItemAllocation(item)?.periodKeys || new Set();
+}
+
+async function ensureIncomeItemAllocationPeriods(item) {
+    const allocation = getIncomeItemAllocation(item);
+    if (!allocation) return;
+
+    for (const key of allocation.periodKeys) {
+        const [year, month] = key.split("-").map(Number);
+        await ensureImportPeriod(year, month);
+    }
 }
 
 async function rebuildNCommissionForPeriod(year, month) {
     const items = await dbGetAll("income_items");
-    const nItems = items.filter(it =>
-        it.apartment === "N" &&
-        Number(it.year) === Number(year) &&
-        Number(it.month) === Number(month)
-    );
+    const nItems = items.filter(it => it.apartment === "N");
+    const allocations = buildReservationFinancials(nItems, {
+        onError: (item, error) =>
+            console.warn("Income stay allocation skipped", item?.id, error),
+    });
 
     let incomeNTotal = 0;
     let bookingFeeTotal = 0;
@@ -394,30 +304,17 @@ async function rebuildNCommissionForPeriod(year, month) {
     let commissionTotal = 0;
     let lastPlatform = null;
 
-    for (const it of nItems) {
-        const platform = String(it.platform || "").toLowerCase();
-        const splitBase = computeSplitBaseForNItem(it);
-        const cleaningFee = getItemCleaningFee(it);
+    for (const allocation of allocations) {
+        const segment = getReservationSegmentForPeriod(allocation, year, month);
+        if (!segment) continue;
 
-        if (
-            !Number.isFinite(splitBase) ||
-            splitBase <= 0 ||
-            !Number.isFinite(cleaningFee)
-        ) {
-            continue;
-        }
+        incomeNTotal += Number(segment.splitBaseEur || 0) || 0;
+        ownerTotal += Number(segment.ownerIncomeEur || 0) || 0;
+        commissionTotal += Number(segment.agencyCommissionEur || 0) || 0;
+        bookingFeeTotal += Number(segment.platformFeeEur || 0) || 0;
 
-        const fee = Number(it.platform_fee_eur || 0) || 0;
-        const owner = round2(splitBase * 0.75);
-        const commission = round2(
-            splitBase * 0.25 + cleaningFee
-        );
-
-        incomeNTotal += splitBase;
-        bookingFeeTotal += fee;
-        ownerTotal += owner;
-        commissionTotal += commission;
-        lastPlatform = platform || lastPlatform;
+        lastPlatform =
+            String(allocation.reservation?.platform || "").toLowerCase() || lastPlatform;
     }
 
     const existing = await dbGetOneByIndex("n_commission", "by_period", [year, month]);
@@ -513,9 +410,15 @@ async function deleteIncomeItem(id) {
     if (!confirmed) return;
 
     try {
+        const affectedPeriods = item.apartment === "N"
+            ? getIncomeItemPeriodKeys(item)
+            : new Set();
+
         await dbDelete("income_items", item.id);
-        if (item.apartment === "N") {
-            await rebuildNCommissionForPeriod(item.year, item.month);
+
+        for (const key of affectedPeriods) {
+            const [year, month] = key.split("-").map(Number);
+            await rebuildNCommissionForPeriod(year, month);
         }
         await render();
     } catch (e) {
@@ -738,22 +641,15 @@ async function handleAddIncomeItem() {
         if (!a || !b || b.getTime() <= a.getTime()) return alert("Check-out mora biti poslije check-in datuma.");
         nights = nightsFromDates(checkin, checkout);
     } else {
-        const hasBothDates = !!checkin && !!checkout;
-        const nightsInputRaw = els.incAddNights?.value;
-        const hasManualNights = (nightsInputRaw !== "" && nightsInputRaw != null);
-        if (hasBothDates) {
-            const a = safeDate(checkin);
-            const b = safeDate(checkout);
-            if (!a || !b || b.getTime() <= a.getTime()) {
-                return alert("Check-out mora biti poslije check-in datuma.");
-            }
-            nights = nightsFromDates(checkin, checkout);
-        } else if (hasManualNights) {
-            const nn = Number(nightsInputRaw);
-            nights = Number.isFinite(nn) ? Math.max(0, Math.round(nn)) : 0;
-        } else {
-            return alert("Za apartmane A/Z unesi ili Noćenja ili oba datuma (Check-in i Check-out).");
+        if (!checkin || !checkout) {
+            return alert("Za apartmane A/Z unesi Check-in i Check-out.");
         }
+        const a = safeDate(checkin);
+        const b = safeDate(checkout);
+        if (!a || !b || b.getTime() <= a.getTime()) {
+            return alert("Check-out mora biti poslije check-in datuma.");
+        }
+        nights = nightsFromDates(checkin, checkout);
     }
 
     // --- persist item ---
@@ -804,40 +700,33 @@ async function handleAddIncomeItem() {
 
     try {
         await dbPutOne("income_items", item);
-        await ensureImportPeriod(period.year, period.month);
-        if (
-            existingItem &&
-            (
-                Number(existingItem.year) !== Number(period.year) ||
-                Number(existingItem.month) !== Number(period.month)
-            )
-        ) {
-            await ensureImportPeriod(existingItem.year, existingItem.month);
+        await ensureIncomeItemAllocationPeriods(item);
+        if (existingItem) {
+            await ensureIncomeItemAllocationPeriods(existingItem);
         }
 
-        // --- N: commission sync ---
-        if (existingItem) {
-            const affectedPeriods = new Set();
-            if (existingItem.apartment === "N") {
-                affectedPeriods.add(`${existingItem.year}-${existingItem.month}`);
+        // --- N: rebuild all months affected by the old/new stay period ---
+        const affectedPeriods = new Set();
+        if (existingItem?.apartment === "N") {
+            for (const key of getIncomeItemPeriodKeys(existingItem)) {
+                affectedPeriods.add(key);
             }
-            if (isN) {
-                affectedPeriods.add(`${period.year}-${period.month}`);
-            }
-            for (const key of affectedPeriods) {
-                const [y, m] = key.split("-").map(Number);
-                await rebuildNCommissionForPeriod(y, m);
-            }
-        } else if (isN) {
-            const details = calcNBreakdown({
-                platform,
-                grossAmount,
-                splitBase,
-                platformFee,
-                cleaningFee: cleaningFeeSnapshot ?? 10,
-            });
-            await upsertNCommission(period.year, period.month, details);
         }
+        if (isN) {
+            for (const key of getIncomeItemPeriodKeys(item)) {
+                affectedPeriods.add(key);
+            }
+        }
+
+        for (const key of affectedPeriods) {
+            const [year, month] = key.split("-").map(Number);
+            await rebuildNCommissionForPeriod(year, month);
+        }
+
+        // Nakon snimanja prikaži mjesec check-ina.
+        state.selectedCalendarYear = period.year;
+        state.selectedPeriodKey = keyFromPeriod(period.year, period.month);
+        state.isYearView = false;
 
         resetIncomeForm();
         closeModal();
@@ -851,134 +740,129 @@ async function handleAddIncomeItem() {
 // ---------- load/render ----------
 
 async function load() {
-    const [incomeMonthly, incomeItems, nCommission, imports] = await Promise.all([
+    const [incomeMonthly, incomeItems, imports] = await Promise.all([
         dbGetAll("income_monthly"),
         dbGetAll("income_items").catch(() => []),
-        dbGetAll("n_commission"),
         dbGetAll("imports"),
     ]);
-    return { incomeMonthly, incomeItems, nCommission, imports };
+    return { incomeMonthly, incomeItems, imports };
 }
 
-function applyFilters(data, aptFilter, platformFilter) {
-    const { incomeMonthly, incomeItems } = data;
+function applyMonthlyFallbackFilters(
+    incomeMonthly,
+    aptFilter,
+    year,
+    month = null,
+    isYearView = false
+) {
+    let rows = [...(incomeMonthly || [])];
 
-    let filteredMonthly = incomeMonthly;
-    let filteredItems = incomeItems;
+    rows = rows.filter((row) => {
+        if (Number(row.year) !== Number(year)) return false;
 
-    // PERIOD FILTER (isto kao sada)
-    if (state.selectedPeriodKey) {
-        const { year, month } = periodKeyToYM(state.selectedPeriodKey);
-        filteredMonthly = filteredMonthly.filter(r => r.year === year && r.month === month);
-        filteredItems = filteredItems.filter(r => r.year === year && r.month === month);
-    } else if (state.isYearView && state.selectedCalendarYear) {
-        filteredMonthly = filteredMonthly.filter(r => r.year === state.selectedCalendarYear);
-        filteredItems = filteredItems.filter(r => r.year === state.selectedCalendarYear);
+        return (
+            isYearView ||
+            Number(row.month) === Number(month)
+        );
+    });
+
+    if (aptFilter && aptFilter !== "ALL") {
+        rows = rows.filter(row => row.apartment === aptFilter);
     }
 
-    // APT FILTER
-    if (aptFilter !== "ALL") {
-        filteredMonthly = filteredMonthly.filter(r => r.apartment === aptFilter);
-        filteredItems = filteredItems.filter(r => r.apartment === aptFilter);
-    }
-
-    // PLATFORM FILTER (samo na income_items jer monthly nema platformu)
-    if (platformFilter && platformFilter !== "ALL") {
-        filteredItems = filteredItems.filter(r => String(r.platform || "").toLowerCase() === platformFilter);
-    }
-
-    return { filteredMonthly, filteredItems };
+    return rows;
 }
 
-function computeSums(filteredMonthly, filteredItems, nCommission) {
+function buildCurrentIncomeView(data, aptFilter, platformFilter) {
+    let year;
+    let month = null;
+
+    if (state.isYearView) {
+        year = state.selectedCalendarYear || new Date().getFullYear();
+    } else if (state.selectedPeriodKey) {
+        const period = periodKeyToYM(state.selectedPeriodKey);
+        year = period.year;
+        month = period.month;
+    } else {
+        year = state.selectedCalendarYear || new Date().getFullYear();
+    }
+
+    const filteredItems = buildIncomePeriodView(
+        data.incomeItems,
+        {
+            year,
+            month,
+            isYearView: state.isYearView,
+            apartment: aptFilter,
+            platform: platformFilter,
+            onError(item, error) {
+                console.error(
+                    "[income.page] Ne mogu izgraditi prikaz rezervacije:",
+                    item?.id,
+                    error
+                );
+            },
+        }
+    );
+
+    const filteredMonthly = applyMonthlyFallbackFilters(
+        data.incomeMonthly,
+        aptFilter,
+        year,
+        month,
+        state.isYearView
+    );
+
+    return {
+        filteredItems,
+        filteredMonthly,
+    };
+}
+
+function computeCurrentIncomeSums(filteredMonthly, filteredItems) {
+    if (filteredItems.length > 0) {
+        return computeIncomePeriodTotals(filteredItems);
+    }
+
     const sumsAZN = {
         A: { income: 0, nights: 0 },
         Z: { income: 0, nights: 0 },
         N: { income: 0, nights: 0 },
     };
 
-    const useItems = Array.isArray(filteredItems) && filteredItems.length > 0;
+    for (const row of filteredMonthly || []) {
+        if (!sumsAZN[row.apartment]) continue;
 
-    if (useItems) {
-        for (const it of filteredItems || []) {
-            if (!sumsAZN[it.apartment]) continue;
+        sumsAZN[row.apartment].income +=
+            Number(row.income_eur || 0) || 0;
 
-            // A/Z prihod iz items.amount_eur
-            if (it.apartment === "A" || it.apartment === "Z") {
-                sumsAZN[it.apartment].income += Number(it.amount_eur || 0) || 0;
-            }
-
-            // nights
-            let n = 0;
-            if (it.nights != null && it.nights !== "") {
-                const nn = Number(it.nights);
-                n = Number.isFinite(nn) ? nn : 0;
-            } else {
-                n = nightsFromDates(it.checkin, it.checkout);
-            }
-            sumsAZN[it.apartment].nights += n;
-        }
-    } else {
-        for (const r of filteredMonthly || []) {
-            if (!sumsAZN[r.apartment]) continue;
-            sumsAZN[r.apartment].income += Number(r.income_eur || 0) || 0;
-            sumsAZN[r.apartment].nights += Number(r.nights || 0) || 0;
-        }
+        sumsAZN[row.apartment].nights +=
+            Number(row.nights || 0) || 0;
     }
 
-    // N breakdown from n_commission
-    const nBreakdown = { income_total: 0, my_commission: 0, owner: 0 };
-
-    const periodKeys = new Set();
-    if (useItems) {
-        for (const it of filteredItems || []) {
-            if (it.apartment === "N") periodKeys.add(`${it.year}-${String(it.month).padStart(2, "0")}`);
-        }
-    } else {
-        for (const r of filteredMonthly || []) {
-            if (r.apartment === "N") periodKeys.add(`${r.year}-${String(r.month).padStart(2, "0")}`);
-        }
-    }
-
-    for (const key of periodKeys) {
-        const [year, month] = key.split("-").map(Number);
-        const comm = (nCommission || []).find(c => c.year === year && c.month === month);
-        if (!comm) continue;
-
-        const incomeNet = Number(comm.incomeN_eur_total || 0) || 0;
-        const commission = round2(Number(comm.commission_eur ?? 0) || 0);
-        const owner = round2(Number(comm.owner_eur ?? 0) || 0);
-
-        nBreakdown.income_total += incomeNet;
-        nBreakdown.my_commission += commission;
-        nBreakdown.owner += owner;
-    }
-
-    // N u “by apt” = moja provizija
-    sumsAZN.N.income = nBreakdown.my_commission;
-
-    // TOTAL: A + Z + ukupan N net (koji ostaje nama)
-    const total = {
-        income: sumsAZN.A.income + sumsAZN.Z.income + nBreakdown.income_total,
-        nights: sumsAZN.A.nights + sumsAZN.Z.nights + sumsAZN.N.nights,
+    const nBreakdown = {
+        income_total: round2(sumsAZN.N.income),
+        my_commission: round2(sumsAZN.N.income),
+        owner: 0,
     };
 
-    return { sumsAZN, nBreakdown, total };
-}
+    const total = {
+        income: round2(
+            sumsAZN.A.income +
+            sumsAZN.Z.income +
+            sumsAZN.N.income
+        ),
+        nights:
+            sumsAZN.A.nights +
+            sumsAZN.Z.nights +
+            sumsAZN.N.nights,
+    };
 
-async function setIncomeItemPaid(id, paid) {
-    if (!id) return;
-
-    const row = await dbGetOne("income_items", id);
-    if (!row) {
-        alert("Ne mogu naći stavku u bazi (income_items).");
-        return;
-    }
-
-    row.paid = !!paid;
-    row.updated_at = new Date().toISOString();
-
-    await dbPutOne("income_items", row);
+    return {
+        sumsAZN,
+        nBreakdown,
+        total,
+    };
 }
 
 async function render() {
@@ -1008,8 +892,17 @@ async function render() {
         isYearView: state.isYearView,
     });
 
-    const { filteredMonthly, filteredItems } = applyFilters(data, state.apt, state.platform);
-    const { sumsAZN, nBreakdown, total } = computeSums(filteredMonthly, filteredItems, data.nCommission);
+    const { filteredMonthly, filteredItems } = buildCurrentIncomeView(
+        data,
+        state.apt,
+        state.platform
+    );
+
+    const { sumsAZN, nBreakdown, total } =
+        computeCurrentIncomeSums(
+            filteredMonthly,
+            filteredItems
+        );
 
     const useItems = filteredItems.length > 0;
     const itemCount = useItems ? filteredItems.length : filteredMonthly.length;
@@ -1048,7 +941,6 @@ function attach() {
     });
 
     if (!els.datesWrap) console.warn("Missing #datesWrap in HTML");
-    if (!els.nightsWrap) console.warn("Missing #nightsWrap in HTML");
 
     els.btnToggleItems?.addEventListener("click", () => {
         const isHidden = els.itemsWrap.classList.toggle("is-collapsed");

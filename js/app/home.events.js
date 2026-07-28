@@ -160,7 +160,7 @@ export function attachEvents(els, handlers) {
       const def = APARTMENT_DEFS[state.aptFilter];
       if (def?.role === APT_ROLE.OWNER) {
         const core = computeNOwnerReport(
-          { incomeItems: data.incomeItems, nCommission: data.nCommission },
+          { allIncomeItems: data.allIncomeItems, incomeItems: data.incomeItems, nCommission: data.nCommission },
           { year, month, def: { ...def, apartment: state.aptFilter } }
         );
 

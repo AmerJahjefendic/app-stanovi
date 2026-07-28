@@ -182,6 +182,8 @@ async function render() {
     return;
   }
 
+  const allIncomeItems = await dbGetAll("income_items").catch(() => []);
+
   if (state.isRangeView) {
     const keys = makeKeyRange(state.fromPeriodKey, state.toPeriodKey);
 
@@ -207,7 +209,7 @@ async function render() {
       const nCommission = await dbGetOneByIndex("n_commission", "by_period", [year, month]);
 
       if (incomeMonthly.length || incomeItems.length || expenses.length || nCommission) {
-        rowsByMonth.push({ incomeMonthly, incomeItems, expenses, nCommission });
+        rowsByMonth.push({ year, month, incomeMonthly, incomeItems, allIncomeItems, expenses, nCommission });
       }
     }
 
@@ -245,7 +247,7 @@ async function render() {
       const incomeItems = await dbGetByIndex("income_items", "by_period", [imp.year, imp.month]).catch(() => []);
       const expenses = await dbGetByIndex("expenses", "by_period", [imp.year, imp.month]);
       const nCommission = await dbGetOneByIndex("n_commission", "by_period", [imp.year, imp.month]);
-      rowsByMonth.push({ incomeMonthly, incomeItems, expenses, nCommission });
+      rowsByMonth.push({ year: imp.year, month: imp.month, incomeMonthly, incomeItems, allIncomeItems, expenses, nCommission });
     }
 
     const report = computeYearReport(rowsByMonth, {
@@ -279,8 +281,11 @@ async function render() {
     {
       incomeMonthly: data.incomeMonthly,
       incomeItems: data.incomeItems,
+      allIncomeItems: data.allIncomeItems,
       expenses: data.expenses,
       nCommission: data.nCommission,
+      year,
+      month,
     },
     { aptFilter: state.aptFilter, shareRule: state.shareRule }
   );
@@ -301,7 +306,7 @@ async function render() {
 
   if (def?.role === APT_ROLE.OWNER) {
     const core = computeNOwnerReport(
-      { incomeItems: data.incomeItems, nCommission: data.nCommission },
+      { allIncomeItems: data.allIncomeItems, incomeItems: data.incomeItems, nCommission: data.nCommission },
       { year, month, def: { ...def, apartment: state.aptFilter } }
     );
 

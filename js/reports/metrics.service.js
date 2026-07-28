@@ -1,6 +1,11 @@
 // js/reports/metrics.service.js
 import { APARTMENTS, APT_LIST, SHARE_RULE, SCOPE } from "../shared/constants.js";
 import { safeDate } from "../shared/utils.js";
+import {
+  buildReservationFinancials,
+  getReservationSegmentForPeriod,
+} from "../shared/reservation-financial.service.js";
+import { buildIncomePeriodView } from "../shared/income-period-view.service.js";
 
 function round2(x) {
   return Math.round((Number(x || 0) + Number.EPSILON) * 100) / 100;
@@ -71,32 +76,31 @@ function nightsFromDates(checkin, checkout) {
   return days > 0 ? days : 0;
 }
 
-// incomeItems -> { A:{income,nights}, Z:{...}, N:{...} }
-function computeIncomeFromItems(incomeItems) {
-  const out = {
-    A: { income: 0, nights: 0 },
-    Z: { income: 0, nights: 0 },
-    N: { income: 0, nights: 0 },
-  };
+// Reservation segments -> { A:{income,nights}, Z:{...}, N:{...} }
+// OWNED income uses allocated amountEur. MANAGED income uses allocated agency commission.
+function computeIncomeFromReservationSegments(incomeItems, year, month) {
+  const out = Object.fromEntries(
+    APT_LIST.map((apartment) => [apartment, { income: 0, nights: 0, itemsCount: 0 }])
+  );
 
-  for (const it of incomeItems || []) {
-    const apt = it?.apartment;
+  const financials = buildReservationFinancials(incomeItems, {
+    onError: (item, error) => {
+      console.warn("KPI reservation allocation skipped", item?.id, error);
+    },
+  });
+
+  for (const financial of financials) {
+    const apt = financial?.reservation?.apartment;
     if (!out[apt]) continue;
 
-    const amount = Number(it?.amount_eur || it?.income_eur || 0) || 0;
-    out[apt].income += amount;
+    const segment = getReservationSegmentForPeriod(financial, year, month);
+    if (!segment) continue;
 
-    // nights: prefer explicit nights (pošto želiš da se snima),
-    // fallback na checkin/checkout ako nights nije upisan
-    let n = 0;
-    if (it?.nights != null && it?.nights !== "") {
-      const nn = Number(it.nights);
-      n = Number.isFinite(nn) ? nn : 0;
-    } else {
-      n = nightsFromDates(it?.checkin, it?.checkout);
-    }
-
-    out[apt].nights += n;
+    out[apt].income += financial.totals.isManaged
+      ? Number(segment.agencyCommissionEur || 0) || 0
+      : Number(segment.amountEur || 0) || 0;
+    out[apt].nights += Number(segment.nights || 0) || 0;
+    out[apt].itemsCount += 1;
   }
 
   return out;
@@ -105,26 +109,46 @@ function computeIncomeFromItems(incomeItems) {
 // =================== PERIOD (1 mjesec) ===================
 
 export function computePeriodReport(
-  { incomeMonthly, incomeItems, expenses, nCommission },
+  { incomeMonthly, incomeItems, allIncomeItems, expenses, nCommission, year, month },
   { aptFilter, shareRule }
 ) {
   // ✅ KLJUČ: da nema dupliranja
   // Ako imamo income_items (bilo koje) -> koristimo SAMO njih
   // Inače koristimo income_monthly
   const incMonthlyArr = Array.isArray(incomeMonthly) ? incomeMonthly : [];
-  const incItemsArr = Array.isArray(incomeItems) ? incomeItems : [];
+  const periodItemsArr = Array.isArray(incomeItems) ? incomeItems : [];
+  const allocationItemsArr = Array.isArray(allIncomeItems)
+    ? allIncomeItems
+    : periodItemsArr;
   const expArr = Array.isArray(expenses) ? expenses : [];
-  const useItems = incItemsArr.length > 0;
 
   const incomeByApt = Object.fromEntries(
     APT_LIST.map((a) => [a, { income: 0, nights: 0 }])
   );
 
-  if (useItems) {
-    const byItems = computeIncomeFromItems(incItemsArr);
-    for (const a of APT_LIST) {
-      incomeByApt[a].income = byItems[a].income || 0;
-      incomeByApt[a].nights = byItems[a].nights || 0;
+  const hasTargetPeriod = Number.isInteger(Number(year)) && Number.isInteger(Number(month));
+  const bySegments = hasTargetPeriod
+    ? computeIncomeFromReservationSegments(allocationItemsArr, Number(year), Number(month))
+    : null;
+  const useAllocatedItems = bySegments
+    ? APT_LIST.some((apartment) => bySegments[apartment].itemsCount > 0)
+    : false;
+
+  if (useAllocatedItems) {
+    for (const apartment of APT_LIST) {
+      incomeByApt[apartment].income = bySegments[apartment].income || 0;
+      incomeByApt[apartment].nights = bySegments[apartment].nights || 0;
+    }
+  } else if (periodItemsArr.length > 0) {
+    // Compatibility for callers that do not yet provide the target period.
+    for (const item of periodItemsArr) {
+      const apartment = item?.apartment;
+      if (!incomeByApt[apartment]) continue;
+      incomeByApt[apartment].income += Number(item?.amount_eur || item?.income_eur || 0) || 0;
+      const explicitNights = Number(item?.nights);
+      incomeByApt[apartment].nights += Number.isFinite(explicitNights)
+        ? explicitNights
+        : nightsFromDates(item?.checkin, item?.checkout);
     }
   } else {
     for (const row of incMonthlyArr) {
@@ -176,8 +200,11 @@ export function computePeriodReport(
   const sharedA = sharedTotal * aShare;
   const sharedZ = sharedTotal - sharedA;  // garantuje sharedA + sharedZ = sharedTotal
 
-  // N: income = commission (not total income), expenses = N expenses
-  const nComm = Number(nCommission?.commission_eur || 0) || 0;
+  // N KPI income is agency commission from the allocated reservation segment.
+  // Legacy fallback remains n_commission when no reservation segment exists.
+  const nComm = useAllocatedItems
+    ? Number(incomeByApt.N.income || 0) || 0
+    : Number(nCommission?.commission_eur || 0) || 0;
 
   const perApt = {
     A: {
@@ -236,73 +263,60 @@ export function computePeriodReport(
 // PDF sloj NE računa – sve kolone i statistika se pripremaju ovdje.
 
 export function computeNOwnerReport(
-  { incomeItems, nCommission },
+  { allIncomeItems, incomeItems, nCommission },
   { year, month, def }
 ) {
-  const items = Array.isArray(incomeItems) ? incomeItems : [];
+  // allIncomeItems je potreban kako bi rezervacije koje prelaze granicu mjeseca
+  // bile uključene u oba stvarna perioda boravka. incomeItems ostaje samo
+  // kompatibilni fallback za starije pozive.
+  const sourceItems = Array.isArray(allIncomeItems)
+    ? allIncomeItems
+    : (Array.isArray(incomeItems) ? incomeItems : []);
 
   const aptFilter = def?.apartment || APARTMENTS.N;
-  const agencyShare = def?.agencyShare ?? 0.25;
-  const ownerShare = def?.ownerShare ?? 0.75;
-  const incomeField = def?.ownerReportIncomeField || "amount_eur";
 
-  // uzmi samo stavke koje imaju checkin/checkout za odabrani apartman
-  const rows0 = items
-    .filter((it) =>
-      it &&
-      it.apartment === aptFilter &&
-      it.checkin &&
-      it.checkout
-    )
-    .map((it) => {
-      const nights = (it.nights != null && it.nights !== "")
-        ? (Number(it.nights) || 0)
-        : nightsFromDates(it.checkin, it.checkout);
+  const periodRows = buildIncomePeriodView(sourceItems, {
+    year,
+    month,
+    apartment: aptFilter,
+    platform: "ALL",
+  });
 
-      const rawIncome = Number(it?.[incomeField] ?? 0) || 0;
+  const rows0 = periodRows.map((row) => {
+    const nights = Number(row?.nights || 0);
+    const reportIncome = Number(row?.allocated_split_base_eur || 0);
+    const agencyCommissionEur = Number(row?.allocated_agency_eur || 0);
+    const ownerNetEur = Number(row?.allocated_owner_eur || 0);
 
-      const platform = String(it?.platform || "").toLowerCase();  // npr "direct"
-      const isDirect = platform === "direct";
+    return {
+      checkin: row.checkin,
+      checkout: row.checkout,
+      totalIncomeEur: round2(reportIncome),
+      nights: round2(nights),
+      agencyCommissionEur: round2(agencyCommissionEur),
+      ownerNetEur: round2(ownerNetEur),
+      pricePerNightEur: round2(nights > 0 ? reportIncome / nights : 0),
+    };
+  });
 
-      // probaj naći CF u itemu (ako ga imaš), inače uzmi iz def
-      const cfFromItem =
-        Number(it?.cf_eur ?? it?.cleaning_fee_eur ?? it?.cleaningFeeEur ?? 0) || 0;
-
-      const cfDefault = Number(def?.directCleaningFeeEur ?? 0) || 0;
-      const cf = isDirect ? (cfFromItem || cfDefault) : 0;
-
-      // ✅ U izvještaju CF se NE smije vidjeti → skida se prije raspodjele
-      const reportIncome = Math.max(0, rawIncome - cf);
-
-      const agencyCommissionEur = agencyShare * reportIncome;
-      const ownerNetEur = ownerShare * reportIncome;
-
-      const pricePerNightEur = nights > 0 ? (reportIncome / nights) : 0;
-
-      return {
-        checkin: it.checkin,
-        checkout: it.checkout,
-        totalIncomeEur: round2(reportIncome),
-        nights: round2(nights),
-        agencyCommissionEur: round2(agencyCommissionEur),
-        ownerNetEur: round2(ownerNetEur),
-        pricePerNightEur: round2(pricePerNightEur),
-      };
-    });
-
-  // sortiraj po checkin
+  // Redovi zadržavaju originalni period rezervacije, a finansije/noćenja
+  // predstavljaju samo dio koji pripada izabranom mjesecu.
   rows0.sort((a, b) => String(a.checkin).localeCompare(String(b.checkin)));
 
   const reservationsCount = rows0.length;
   const nightsTotal = rows0.reduce((s, r) => s + (Number(r.nights) || 0), 0);
-  const incomeTotalEur = rows0.reduce((s, r) => s + (Number(r.totalIncomeEur) || 0), 0);
+  const incomeTotalEur = rows0.reduce(
+    (s, r) => s + (Number(r.totalIncomeEur) || 0),
+    0
+  );
 
-  const avgStayLength = reservationsCount > 0 ? (nightsTotal / reservationsCount) : 0;
-  const avgPricePerNightEur = nightsTotal > 0 ? (incomeTotalEur / nightsTotal) : 0;
+  const avgStayLength = reservationsCount > 0
+    ? nightsTotal / reservationsCount
+    : 0;
+  const avgPricePerNightEur = nightsTotal > 0
+    ? incomeTotalEur / nightsTotal
+    : 0;
 
-  // Ukupan neto vlasnika:
-  // - ako nCommission.owner_eur postoji, uzmi to kao “izvor istine” (mjesečni agregat)
-  // - inače suma po redovima
   const ownerNetTotalEur = round2(
     rows0.reduce((s, r) => s + (Number(r.ownerNetEur) || 0), 0)
   );
@@ -344,8 +358,11 @@ export function computeYearReport(rowsByMonth, opts) {
       {
         incomeMonthly: m.incomeMonthly,
         incomeItems: m.incomeItems,
+        allIncomeItems: m.allIncomeItems,
         expenses: m.expenses,
         nCommission: m.nCommission,
+        year: m.year,
+        month: m.month,
       },
       { aptFilter: "ALL", shareRule: opts.shareRule }
     );
