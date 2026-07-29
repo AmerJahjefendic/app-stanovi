@@ -60,13 +60,47 @@ function buildResult({
 }
 
 /**
- * Calculate AIRBNB reservation using SPLIT_FEE model.
+ * Calculate legacy AIRBNB SPLIT_FEE from the actual Airbnb payout entered by
+ * the user. This preserves the existing AppStanovi workflow:
+ * payout includes the fixed CF, so the split base is payout - CF.
+ *
+ * The Airbnb platform fee cannot be reconstructed reliably from payout alone,
+ * therefore it remains 0 in the persisted snapshot, exactly as before.
+ *
+ * @param {Object} [params]
+ * @param {number} params.payoutAmount Actual Airbnb payout including CF.
+ * @param {number} [params.agencyShare=0.25] Agency share as decimal.
+ * @param {number} [params.ownerShare=0.75] Owner share as decimal.
+ */
+export function calculateAirbnbSplitFeeFromPayout({
+  payoutAmount,
+  agencyShare = DEFAULT_AGENCY_SHARE,
+  ownerShare = DEFAULT_OWNER_SHARE,
+} = {}) {
+  const payout = assertPositive(payoutAmount, "Airbnb payout");
+  const cleaningFee = SPLIT_FEE_CLEANING_FEE;
+  const splitBase = payout - cleaningFee;
+
+  return buildResult({
+    platform: Platforms.AIRBNB,
+    feeModel: FeeModels.SPLIT_FEE,
+    grossAmount: payout,
+    cleaningFee,
+    platformFee: 0,
+    payoutAmount: payout,
+    splitBase,
+    agencyShare,
+    ownerShare,
+  });
+}
+
+/**
+ * Calculate AIRBNB reservation using SPLIT_FEE model from reservation gross.
  *
  * @param {Object} [params]
  * @param {number} params.grossAmount Reservation amount without cleaning fee.
  * @param {number} [params.agencyShare=0.25] Agency share as decimal.
  * @param {number} [params.ownerShare=0.75] Owner share as decimal.
- * @returns {{platform:string,feeModel:string|null,grossAmount:number,cleaningFee:number,platformFee:number,payoutAmount:number,splitBase:number,ownerAmount:number,agencyAmount:number}}
  */
 export function calculateAirbnbSplitFee({
   grossAmount,

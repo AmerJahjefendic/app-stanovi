@@ -3,7 +3,10 @@ import { dbDelete, dbGetAll, dbGetOne, dbGetOneByIndex, dbPutOne, makeId } from 
 import { keyFromPeriod, periodKeyToYM, safeDate } from "../shared/utils.js";
 import { debug } from "../shared/log.js";
 import { FeeModels, Platforms } from "../shared/constants.js";
-import { calculateManagedReservation } from "../shared/managed-income-calculator.js";
+import {
+    calculateAirbnbSplitFeeFromPayout,
+    calculateManagedReservation,
+} from "../shared/managed-income-calculator.js";
 import {
     buildReservationFinancial,
     buildReservationFinancials,
@@ -344,7 +347,7 @@ async function openIncomeItemForEdit(id) {
     state.editingIncomeItemId = item.id;
     if (els.incAddApt) els.incAddApt.value = item.apartment || "";
     if (els.incAddPlatform) {
-        els.incAddPlatform.value = item.platform || "Booking";
+        els.incAddPlatform.value = item.platform || Platforms.BOOKING;
         els.incAddPlatform.dispatchEvent(new Event("change"));
     }
     const platform = String(item.platform || "").toLowerCase();
@@ -536,25 +539,32 @@ async function handleAddIncomeItem() {
         const eur = Number(els.incAddAmount?.value || 0);
         if (!Number.isFinite(eur) || eur <= 0) return alert("Unesi ispravan iznos (EUR).");
 
-        // ✅ N + Airbnb: unos = reservation price (bez CF)
+        // ✅ N + Airbnb: Split Fee unos = payout; Single Fee unos = cijena rezervacije bez CF
         if (platform === Platforms.AIRBNB && isN) {
             selectedFeeModel = normalizeAirbnbFeeModel(
                 els.incAddFeeModel?.value
             );
 
             if (selectedFeeModel === FeeModels.SPLIT_FEE) {
-                cleaningFeeSnapshot = 10;
-                platformFeePctSnapshot = 3;
+                let calculation;
 
-                grossAmount = eur;
-                platformFee = 0;
-                splitBase = eur - cleaningFeeSnapshot;
-
-                if (!Number.isFinite(splitBase) || splitBase <= 0) {
-                    return alert("Osnovica za raspodjelu mora biti veća od 0.");
+                try {
+                    calculation = calculateAirbnbSplitFeeFromPayout({
+                        payoutAmount: eur,
+                    });
+                } catch (error) {
+                    return alert(
+                        error?.message ||
+                        "Osnovica za raspodjelu mora biti veća od 0."
+                    );
                 }
 
-                amountToStore = splitBase;
+                amountToStore = calculation.splitBase;
+                splitBase = calculation.splitBase;
+                grossAmount = calculation.grossAmount;
+                platformFee = calculation.platformFee;
+                cleaningFeeSnapshot = calculation.cleaningFee;
+                platformFeePctSnapshot = 3;
             } else {
                 const config = await getCommissionConfig({
                     apartmentId: apartment,
@@ -787,7 +797,12 @@ function buildCurrentIncomeView(data, aptFilter, platformFilter) {
         year = state.selectedCalendarYear || new Date().getFullYear();
     }
 
-    const filteredItems = buildIncomePeriodView(
+    // Prazna baza nema odabran mjesec. U tom stanju nema šta filtrirati,
+    // a period service namjerno zahtijeva validan mjesec za monthly view.
+    const filteredItems =
+        !state.isYearView && month == null
+            ? []
+            : buildIncomePeriodView(
         data.incomeItems,
         {
             year,
