@@ -2,6 +2,36 @@
 const DB_NAME = "appstanovi_db";
 export const DB_VER = 14;
 
+export const BACKUP_STORE_NAMES = Object.freeze([
+  "apartments",
+  "groups",
+  "share_sets",
+  "commission_rules",
+  "meta",
+  "shopping_items",
+  "category_aliases",
+  "imports",
+  "income_monthly",
+  "income_items",
+  "expenses",
+  "n_commission",
+]);
+
+export const STORE_KEY_PATHS = Object.freeze({
+  apartments: "id",
+  groups: "id",
+  share_sets: "id",
+  commission_rules: "id",
+  meta: "key",
+  shopping_items: "id",
+  category_aliases: "from",
+  imports: "id",
+  income_monthly: "id",
+  income_items: "id",
+  expenses: "id",
+  n_commission: "id",
+});
+
 // helper: create store if missing
 function ensureStore(db, name, opts, indexDefs = []) {
   if (!db.objectStoreNames.contains(name)) {
@@ -421,6 +451,51 @@ function tx(db, store, mode = "readonly") {
 }
 
 // ================== BASIC CRUD ==================
+export async function dbPutStoreMapAtomic(storeRows) {
+  const entries = Object.entries(storeRows || {}).filter(([, rows]) => Array.isArray(rows) && rows.length);
+  if (!entries.length) return true;
+
+  const db = await getDB();
+  const storeNames = entries.map(([storeName]) => storeName);
+
+  for (const storeName of storeNames) {
+    if (!db.objectStoreNames.contains(storeName)) {
+      throw new Error(`IndexedDB store nije dostupan: ${storeName}`);
+    }
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let t;
+
+    try {
+      t = db.transaction(storeNames, "readwrite");
+      for (const [storeName, rows] of entries) {
+        const store = t.objectStore(storeName);
+        for (const row of rows) store.put(row);
+      }
+    } catch (err) {
+      reject(err);
+      return;
+    }
+
+    t.oncomplete = () => {
+      if (settled) return;
+      settled = true;
+      resolve(true);
+    };
+    t.onabort = () => {
+      if (settled) return;
+      settled = true;
+      reject(t.error || new Error("Restore transakcija je prekinuta."));
+    };
+    t.onerror = () => {
+      // IndexedDB will abort the transaction for request errors. Reject from
+      // onabort so callers receive one deterministic failure path.
+    };
+  });
+}
+
 export async function dbPutMany(storeName, items) {
   let retries = 2;
   while (retries >= 0) {

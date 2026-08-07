@@ -37,6 +37,7 @@ const PRECACHE_URLS = [
   "./vendor/xlsx.full.min.js",
 
   "./js/shared/app-version.js",
+  "./js/backup/backup.service.js",
   "./js/pwa/pwa-client.js",
   "./js/app/home.data.js",
   "./js/app/home.events.js",

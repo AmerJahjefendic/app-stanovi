@@ -12,7 +12,6 @@ import {
   dbPutMany,
   shoppingCountToBuy,
   dbDeleteByIndex,
-  DB_VER,
 } from "../db/db.js";
 
 import { keyFromPeriod, periodKeyToYM } from "../shared/utils.js";
@@ -36,6 +35,7 @@ import { getShareRule, setShareRule } from "../shared/settings.js";
 import { setPickerLabel } from "./home.ui.js";
 import { loadPeriodData } from "./home.data.js";
 import { attachEvents } from "./home.events.js";
+import { exportBackupFile, restoreBackupFileAtomic } from "../backup/backup.service.js";
 
 const els = {
   mBtnBackup: document.getElementById("mBtnBackup"),
@@ -364,125 +364,15 @@ async function handleImport(file) {
   await render();
 }
 
-async function safeGetAll(store) {
-  try { return await dbGetAll(store); }
-  catch { return []; }
-}
-
 async function exportBackup() {
-  const nowIso = new Date().toISOString();
-
-  const data = {
-    meta: { 
-      app: "AppStanovi", 
-      version: "1.0", 
-      schema_version: DB_VER,
-      exported_at: nowIso 
-    },
-
-    // ✅ NEW (dynamic config)
-    apartments: await safeGetAll("apartments"),
-    groups: await safeGetAll("groups"),
-    share_sets: await safeGetAll("share_sets"),
-    commission_rules: await safeGetAll("commission_rules"),
-    settings_meta: await safeGetAll("meta"), 
-
-    // ✅ NEW 
-    income: await safeGetAll("income"),
-    expenses_v2: await safeGetAll("expenses"), 
-    shopping_items: await safeGetAll("shopping_items"),
-    category_aliases: await safeGetAll("category_aliases"),
-
-    // ✅ LEGACY 
-    imports: await safeGetAll("imports"),
-    income_monthly: await safeGetAll("income_monthly"),
-    income_items: await safeGetAll("income_items"),
-    expenses: await safeGetAll("expenses"),
-    n_commission: await safeGetAll("n_commission"),
-  };
-
-  const filename = `appstanovi-backup-${nowIso.slice(0, 10)}.json`;
-  const jsonText = JSON.stringify(data, null, 2);
-  const blob = new Blob([jsonText], { type: "application/json" });
-
-  if (window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: filename,
-        types: [{ description: "JSON", accept: { "application/json": [".json"] } }],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-      return;
-    } catch (e) {
-      if (e?.name === "AbortError") return;
-      console.warn("Save picker failed, fallback:", e);
-    }
-  }
-
-  if (navigator.share) {
-    try {
-      const file = new File([blob], filename, { type: "application/json" });
-      await navigator.share({ files: [file], title: "AppStanovi backup" });
-      return;
-    } catch (e) {
-      console.warn("Share API failed, fallback to download:", e);
-    }
-  }
-
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-async function safePutMany(store, rows) {
-  if (!Array.isArray(rows) || !rows.length) return;
-  try { await dbPutMany(store, rows); } catch {}
+  return exportBackupFile();
 }
 
 async function restoreBackupFile(file) {
-  const text = await file.text();
-  const data = JSON.parse(text);
+  const result = await restoreBackupFileAtomic(file);
+  if (!result) return;
 
-  if (!data?.meta || data.meta.app !== "AppStanovi") {
-    throw new Error("Ovo nije validan AppStanovi backup fajl.");
-  }
-
-  const ok = confirm("Restore će DODATI/PREPISATI podatke iz backupa. Nastaviti?");
-  if (!ok) return;
-
-  // ✅ RESTORE CONFIG FIRST (dynamic apartments)
-  await safePutMany("meta", data.settings_meta);           // meta store
-  await safePutMany("groups", data.groups);
-  await safePutMany("share_sets", data.share_sets);
-  await safePutMany("apartments", data.apartments);
-  await safePutMany("commission_rules", data.commission_rules);
-
-  // ✅ RESTORE NEW DATA (if present)
-  await safePutMany("income", data.income);
-  await safePutMany("shopping_items", data.shopping_items);
-  await safePutMany(
-    "category_aliases",
-    data.category_aliases
-  );
   await loadCategoryAliases();
-  const expensesBackup = Array.isArray(data.expenses_v2)
-    ? data.expenses_v2
-    : (data.expenses || []);
-
-  const periods = new Set((data.imports || []).map(i => `${i.year}-${i.month}`));
-  for (const key of periods) {
-    const [y, m] = key.split("-");
-    await dbPutMany("imports", (data.imports || []).filter(i => i.year === Number(y) && i.month === Number(m)));
-    await dbPutMany("income_monthly", (data.income_monthly || []).filter(i => i.year === Number(y) && i.month === Number(m)));
-    await dbPutMany("income_items", (data.income_items || []).filter(i => i.year === Number(y) && i.month === Number(m)));
-    await dbPutMany("n_commission", (data.n_commission || []).filter(i => i.year === Number(y) && i.month === Number(m)));
-  }
-  await safePutMany("expenses", expensesBackup);
 
   const imports = await dbGetAll("imports");
   imports.sort((a, b) => a.year - b.year || a.month - b.month);
