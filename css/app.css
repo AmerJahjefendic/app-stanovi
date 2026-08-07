@@ -561,9 +561,9 @@ td.right {
 
 .modalFooter{ border-bottom:none; border-top: 1px solid rgba(255,255,255,.08); gap:10px; justify-content:flex-end; }
 
-.modalBody{ 
-  padding: 14px 16px; 
-  display:grid; 
+.modalBody{
+  padding: 14px 16px;
+  display:grid;
   gap:12px;
   overflow: auto;
   max-height: calc(90vh - 120px);
@@ -781,5 +781,47 @@ td.right {
   .pwaSettingsUpdate {
     align-items: stretch;
     flex-direction: column;
+  }
+}
+
+
+/* Settings: application version and runtime status */
+.appInfoCard {
+  margin-bottom: 16px;
+}
+
+.appInfoGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.appInfoGrid > div {
+  padding: 12px;
+  border: 1px solid var(--border, #d9d9d9);
+  border-radius: 10px;
+}
+
+.appInfoGrid dt {
+  margin-bottom: 4px;
+  color: var(--muted, #6b7280);
+  font-size: 0.85rem;
+}
+
+.appInfoGrid dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .appInfoGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 460px) {
+  .appInfoGrid {
+    grid-template-columns: 1fr;
   }
 }

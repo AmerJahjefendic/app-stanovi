@@ -48,6 +48,7 @@ const PRECACHE_URLS = [
   "./js/income/income.page.js",
   "./js/income/income.ui.js",
   "./js/reports/metrics.service.js",
+  "./js/settings/app-info.js",
   "./js/settings/settings.page.js",
   "./js/settings/settings.ui.js",
   "./js/shared/apartments.service.js",

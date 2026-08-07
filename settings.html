@@ -34,6 +34,32 @@
         </header>
 
         <main class="content">
+            <section class="card appInfoCard" aria-labelledby="appInfoTitle">
+                <div class="card-header">
+                    <h2 id="appInfoTitle">O aplikaciji</h2>
+                    <p class="muted">Verzija i lokalni runtime status AppStanovi aplikacije.</p>
+                </div>
+
+                <dl class="appInfoGrid">
+                    <div>
+                        <dt>App verzija</dt>
+                        <dd id="appInfoVersion">—</dd>
+                    </div>
+                    <div>
+                        <dt>App shell</dt>
+                        <dd id="appInfoShell">—</dd>
+                    </div>
+                    <div>
+                        <dt>IndexedDB verzija</dt>
+                        <dd id="appInfoDb">—</dd>
+                    </div>
+                    <div>
+                        <dt>PWA status</dt>
+                        <dd id="appInfoPwa">Provjera…</dd>
+                    </div>
+                </dl>
+            </section>
+
             <section class="card">
                 <div class="card-header">
                     <h2>Apartmani</h2>
@@ -54,7 +80,7 @@
                                 <th>Grupa</th>
                                 <th>Tip</th>
                                 <th>Apartman</th>
-                                <th>Adresa</th>                             
+                                <th>Adresa</th>
                                 <th>Vlasnik</th>
                                 <th>Agencijska provizija</th>
                                 <th>Aktivan</th>
@@ -207,8 +233,10 @@
         </div>
     </div>
 
+    <script src="js/shared/app-version.js"></script>
+    <script type="module" src="js/settings/app-info.js"></script>
     <script type="module" src="js/settings/settings.page.js"></script>
-  <script type="module" src="js/pwa/pwa-client.js"></script>
+    <script type="module" src="js/pwa/pwa-client.js"></script>
 </body>
 
 </html>
