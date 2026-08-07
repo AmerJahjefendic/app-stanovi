@@ -1,0 +1,39 @@
+{
+  "id": "./",
+  "name": "AppStanovi",
+  "short_name": "AppStanovi",
+  "description": "Lokalna aplikacija za upravljanje prihodima, troškovima i izvještajima apartmana.",
+  "lang": "bs",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f6f8",
+  "theme_color": "#1f2937",
+  "icons": [
+    {
+      "src": "assets/icons/appstanovi-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icons/appstanovi-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icons/appstanovi-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "assets/icons/appstanovi-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
