@@ -710,3 +710,76 @@ td.right {
   background: #b91c1c;
   border-color: #b91c1c;
 }
+
+/* PWA controlled update banner */
+.pwaUpdateBanner {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 10000;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 12px 14px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 12px;
+  background: var(--card, #fff);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+}
+
+.pwaUpdateContent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pwaUpdateText {
+  min-width: 0;
+}
+
+.pwaUpdateActions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .pwaUpdateContent {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pwaUpdateActions {
+    justify-content: flex-end;
+  }
+}
+
+
+.pwaSettingsUpdate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #d9d9d9);
+  border-radius: 10px;
+  background: var(--card, #fff);
+}
+
+.pwaSettingsUpdate.is-hidden {
+  display: none;
+}
+
+.pwaSettingsUpdateMeta {
+  margin-top: 3px;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 640px) {
+  .pwaSettingsUpdate {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

@@ -4,15 +4,16 @@
  * Important lifecycle rules:
  * - no IndexedDB access
  * - no automatic skipWaiting()
- * - no clientsClaim()
+ * - clients.claim() is used only after a user-approved waiting worker activates
  * - only AppStanovi-owned caches are cleaned up
  * - the full critical app shell must precache successfully or install fails
  */
 importScripts("./js/shared/app-version.js");
 
 const APP_VERSION = globalThis.APPSTANOVI_APP_VERSION;
+const APP_SHELL_REVISION = globalThis.APPSTANOVI_APP_SHELL_REVISION;
 const CACHE_PREFIX = "appstanovi-static-v";
-const STATIC_CACHE = `${CACHE_PREFIX}${APP_VERSION}`;
+const STATIC_CACHE = `${CACHE_PREFIX}${APP_VERSION}-r${APP_SHELL_REVISION}`;
 
 const PRECACHE_URLS = [
   "./",
@@ -77,18 +78,34 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) =>
-      Promise.all(
+    (async () => {
+      const cacheNames = await caches.keys();
+      await Promise.all(
         cacheNames
           .filter(
             (cacheName) =>
               cacheName.startsWith(CACHE_PREFIX) && cacheName !== STATIC_CACHE
           )
           .map((cacheName) => caches.delete(cacheName))
-      )
-    )
+      );
+
+      await self.clients.claim();
+    })()
   );
 });
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "GET_UPDATE_ID") {
+    event.ports?.[0]?.postMessage({
+      workerId: `${APP_VERSION}-r${APP_SHELL_REVISION}`,
+    });
+    return;
+  }
+
+  if (event.data?.type === "ACTIVATE_UPDATE") {
+    self.skipWaiting();
+  }
+});
+
 
 function isSameOriginGet(request) {
   if (request.method !== "GET") return false;
