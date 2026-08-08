@@ -159,7 +159,6 @@ export function computeIncomePeriodTotals(rows = []) {
     return key;
   };
 
-  for (const apartment of ["A", "Z", "N"]) ensureApartment(apartment);
 
   const managedBreakdowns = {};
   const ensureManagedBreakdown = (apartment) => {

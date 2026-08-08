@@ -524,7 +524,8 @@ async function handleAddIncomeItem() {
         }
     }
 
-    const apartment = els.incAddApt?.value || "A";
+    const apartment = String(els.incAddApt?.value || "").trim();
+    if (!apartment) return alert("Prvo dodaj apartman u Settings i zatim ga izaberi.");
     const platform = (els.incAddPlatform?.value || "").toLowerCase();
     const isManaged = isManagedApartmentId(apartment);
     const managedShares = managedSharesForApartment(apartment);
@@ -943,16 +944,36 @@ function buildCurrentIncomeView(data, aptFilter, platformFilter) {
     };
 }
 
-function computeCurrentIncomeSums(filteredMonthly, filteredItems) {
-    if (filteredItems.length > 0) {
-        return computeIncomePeriodTotals(filteredItems);
+function activeApartmentIdsForCurrentFilter() {
+    const activeIds = [...apartmentMap.values()]
+        .filter((apartment) => apartment?.isActive !== false)
+        .map((apartment) => String(apartment?.id || "").trim())
+        .filter(Boolean);
+
+    if (state.apt && state.apt !== "ALL") {
+        return activeIds.includes(state.apt) ? [state.apt] : [];
     }
 
-    const sumsAZN = {
-        A: { income: 0, nights: 0 },
-        Z: { income: 0, nights: 0 },
-        N: { income: 0, nights: 0 },
-    };
+    return activeIds;
+}
+
+function seedActiveApartmentSums(sums = {}) {
+    for (const apartmentId of activeApartmentIdsForCurrentFilter()) {
+        if (!sums[apartmentId]) {
+            sums[apartmentId] = { income: 0, nights: 0 };
+        }
+    }
+    return sums;
+}
+
+function computeCurrentIncomeSums(filteredMonthly, filteredItems) {
+    if (filteredItems.length > 0) {
+        const totals = computeIncomePeriodTotals(filteredItems);
+        seedActiveApartmentSums(totals.sumsAZN);
+        return totals;
+    }
+
+    const sumsAZN = seedActiveApartmentSums({});
 
     for (const row of filteredMonthly || []) {
         const apartment = String(row?.apartment || "").trim();
@@ -963,9 +984,10 @@ function computeCurrentIncomeSums(filteredMonthly, filteredItems) {
         sumsAZN[apartment].nights += Number(row.nights || 0) || 0;
     }
 
+    const legacyN = sumsAZN.N || { income: 0, nights: 0 };
     const nBreakdown = {
-        income_total: round2(sumsAZN.N.income),
-        my_commission: round2(sumsAZN.N.income),
+        income_total: round2(legacyN.income),
+        my_commission: round2(legacyN.income),
         owner: 0,
     };
     const managedBreakdowns = nBreakdown.income_total || nBreakdown.my_commission

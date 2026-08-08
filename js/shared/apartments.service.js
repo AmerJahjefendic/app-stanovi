@@ -210,11 +210,6 @@ export async function apartmentsDelete(id) {
     const key = _trim(id);
     if (!key) return true;
 
-    // sigurnosno: ne dozvoli brisanje seed core A/Z/N bez posebne odluke
-    if (["A", "Z", "N"].includes(key)) {
-        throw new Error("Brisanje A/Z/N nije dozvoljeno (core apartmani). Možeš ih samo deaktivirati.");
-    }
-
     await dbDelete("apartments", key);
     return true;
 }

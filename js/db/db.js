@@ -46,7 +46,7 @@ function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VER);
 
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = (event) => {
       const db = req.result;
 
       // ===== CATEGORY ALIASES (merge kategorija) =====
@@ -185,6 +185,13 @@ function openDB() {
       // 1) META: schemaVersion
       putIfMissing("meta", "schemaVersion", { key: "schemaVersion", value: 1 });
 
+      // Fresh install starts without portfolio-specific data.
+      // Shared/Solo are generic application categories required by Settings
+      // so a new user can create the first apartment. Legacy Managed (N),
+      // A/Z/N apartments, NIZE_BANJE_2 and N_AIRBNB_DEFAULT are created only
+      // when upgrading an existing legacy database.
+      const isFreshInstall = event.oldVersion === 0;
+
       // 2) GROUPS
       function ensureSystemGroup(id, name, type) {
         const s = t.objectStore("groups");
@@ -214,22 +221,26 @@ function openDB() {
 
       ensureSystemGroup("AZ", "Shared", "OWNED_SHARED");
       ensureSystemGroup("O",  "Solo", "OWNED_SOLO");
-      ensureSystemGroup("N",  "Managed", "MANAGED");
+      if (!isFreshInstall) {
+        ensureSystemGroup("N", "Managed", "MANAGED");
+      }
 
-      // 3) SHARE_SETS (prvo kreiraj share set)
+      // 3) LEGACY SHARE_SET + APARTMENTS
       const now = new Date().toISOString();
-      putIfMissing("share_sets", "NIZE_BANJE_2", {
-        id: "NIZE_BANJE_2",
-        name: "Niže banje 2",
-        address: "Niže banje 2",
-        isActive: true,
-        sort: 10,
-        createdAt: now,
-        updatedAt: now,
-      });
+      if (!isFreshInstall) {
+        putIfMissing("share_sets", "NIZE_BANJE_2", {
+          id: "NIZE_BANJE_2",
+          name: "Niže banje 2",
+          address: "Niže banje 2",
+          isActive: true,
+          sort: 10,
+          createdAt: now,
+          updatedAt: now,
+        });
 
-      // 4) APARTMENTS (A/Z OWNED, N MANAGED with 25%)
-      seedIfEmpty("apartments", [
+        // Existing databases that predate the Apartment Registry need the
+        // legacy A/Z/N records so their historical references remain valid.
+        seedIfEmpty("apartments", [
         {
           id: "A",
           name: "A",
@@ -269,7 +280,8 @@ function openDB() {
           createdAt: now,
           updatedAt: now,
         },
-      ]);
+        ]);
+      }
 
       // ===== MIGRATION: Patch existing apartments =====
       function patchApartment(id, patchFn) {
@@ -300,7 +312,7 @@ function openDB() {
 
       // ===== MIGRATION v14: Airbnb fee model =====
       // Dopisuje samo nedostajuće polje; postojeći iznosi i obračuni ostaju netaknuti.
-      if (req.oldVersion < 14 && db.objectStoreNames.contains("income_items")) {
+      if (event.oldVersion < 14 && db.objectStoreNames.contains("income_items")) {
         const incomeStore = t.objectStore("income_items");
         const cursorReq = incomeStore.openCursor();
         cursorReq.onsuccess = () => {
@@ -318,21 +330,23 @@ function openDB() {
         };
       }
 
-      // Default Airbnb rule for the existing MANAGED apartment.
-      putIfMissing("commission_rules", "N_AIRBNB_DEFAULT", {
-        id: "N_AIRBNB_DEFAULT",
-        groupId: "N",
-        apartmentId: "N",
-        platform: "airbnb",
-        feeModel: "SPLIT_FEE",
-        platformFeePct: 3,
-        cleaningFeeEur: 10,
-        agencyPct: 25,
-        ownerPct: 75,
-        isDefault: true,
-        createdAt: now,
-        updatedAt: now,
-      });
+      // Default Airbnb rule only belongs to legacy N installations.
+      if (!isFreshInstall) {
+        putIfMissing("commission_rules", "N_AIRBNB_DEFAULT", {
+          id: "N_AIRBNB_DEFAULT",
+          groupId: "N",
+          apartmentId: "N",
+          platform: "airbnb",
+          feeModel: "SPLIT_FEE",
+          platformFeePct: 3,
+          cleaningFeeEur: 10,
+          agencyPct: 25,
+          ownerPct: 75,
+          isDefault: true,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
     };
 
     req.onblocked = () => {
