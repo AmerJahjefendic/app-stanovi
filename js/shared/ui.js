@@ -1,5 +1,5 @@
 // js/shared/ui.js
-import { fmtEUR, fmtNum } from "./utils.js";
+import { fmtEUR, fmtNum, MONTH_NAMES } from "./utils.js";
 import { APARTMENTS } from "./constants.js";
 
 export function renderPeriodList(root, periods, selectedKey) {
@@ -129,10 +129,6 @@ export function renderNNote(root, nCommission) {
   `;
 }
 
-const MONTHS_BS = [
-  "Januar", "Februar", "Mart", "April", "Maj", "Juni",
-  "Juli", "August", "Septembar", "Oktobar", "Novembar", "Decembar"
-];
 
 export function renderYearCalendar(
   root,
@@ -153,7 +149,7 @@ export function renderYearCalendar(
       </div>
     </div>
     <div class="yearCalGrid">
-      ${MONTHS_BS.map((mName, idx) => {
+      ${MONTH_NAMES.map((mName, idx) => {
         const m = idx + 1;
         const imported = importedMonthsSet.has(m);
         const cls = [

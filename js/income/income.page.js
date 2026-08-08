@@ -16,7 +16,7 @@ import {
     buildIncomePeriodView,
     computeIncomePeriodTotals,
 } from "../shared/income-period-view.service.js";
-import { getCommissionConfig } from "../shared/commission-rules.service.js";
+import { getCommissionConfig, normalizeAirbnbFeeModel } from "../shared/commission-rules.service.js";
 import { renderYearCalendar, withLoading } from "../shared/ui.js";
 import { periodLabel } from "../shared/parseFilename.js";
 import { renderIncomeSummary, renderIncomeItemsTable, renderIncomeByApt } from "./income.ui.js";
@@ -163,12 +163,6 @@ async function resolveManagedCleaningFeeForWrite({
 
 function round2(x) {
     return Math.round((Number(x || 0) + Number.EPSILON) * 100) / 100;
-}
-
-function normalizeAirbnbFeeModel(value) {
-    return value === FeeModels.SINGLE_FEE
-        ? FeeModels.SINGLE_FEE
-        : FeeModels.SPLIT_FEE;
 }
 
 function todayISO() {

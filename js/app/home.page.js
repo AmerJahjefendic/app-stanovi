@@ -229,7 +229,6 @@ async function render() {
       shareRule: state.shareRule,
     });
 
-    renderKPIs(report.kpi, els);
     const monthsCount = rowsByMonth.length;
     const kpi2 = addAvgFieldsToKpi(report.kpi, monthsCount);
     renderKPIs(kpi2, els);
@@ -257,7 +256,6 @@ async function render() {
       shareRule: state.shareRule,
     });
 
-    renderKPIs(report.kpi, els);
     const monthsCount = rowsByMonth.length;
     const kpi2 = addAvgFieldsToKpi(report.kpi, monthsCount);
     renderKPIs(kpi2, els);
@@ -293,7 +291,6 @@ async function render() {
   );
   console.log("Period report dto", JSON.parse(JSON.stringify(report)));
 
-  renderKPIs(report.kpi, els);
   const kpi2 = addAvgFieldsToKpi(report.kpi, 1);
   renderKPIs(kpi2, els);
   renderIncomeTable(els.incomeTable, report.perApt, state.aptFilter);

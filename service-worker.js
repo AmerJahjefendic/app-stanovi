@@ -58,7 +58,6 @@ const PRECACHE_URLS = [
   "./js/shared/commission-rules.service.js",
   "./js/shared/constants.js",
   "./js/shared/importXlsx.js",
-  "./js/shared/income-allocation.service.js",
   "./js/shared/income-period-view.service.js",
   "./js/shared/log.js",
   "./js/shared/managed-income-calculator.js",

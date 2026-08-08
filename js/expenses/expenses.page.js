@@ -90,10 +90,6 @@ function normCat(exp) {
     return mapExpenseCategory(raw);
 }
 
-function periodKey(y, m) {
-    return `${y}-${String(m).padStart(2, "0")}`;
-}
-
 /**
  * Računa broj noćenja na osnovu checkin i checkout datuma
  * @param {string} checkin - Datum prijave (ISO format ili bilo koji validan datum string)
@@ -157,7 +153,7 @@ function buildIncomeMap(incomeMonthlyRows, incomeItems, apartmentIds) {
         if (!memberIds.has(apartment)) continue;
 
         for (const segment of financial.segments || []) {
-            const key = periodKey(segment.year, segment.month);
+            const key = keyFromPeriod(segment.year, segment.month);
             const slot = ensure(key, apartment);
             slot.income += financial.totals.isManaged
                 ? Number(segment.splitBaseEur || 0)
@@ -172,7 +168,7 @@ function buildIncomeMap(incomeMonthlyRows, incomeItems, apartmentIds) {
         const apartment = String(row?.apartment || "").trim();
         if (!memberIds.has(apartment)) continue;
 
-        const key = periodKey(row.year, row.month);
+        const key = keyFromPeriod(row.year, row.month);
         const slot = ensure(key, apartment);
         if (slot.hasItems) continue;
 
@@ -207,7 +203,7 @@ function buildRenderableExpenses(rawExpenses, incomeMonthlyRows, incomeItems, sh
             continue;
         }
 
-        const key = periodKey(expense.year, expense.month);
+        const key = keyFromPeriod(expense.year, expense.month);
         const basisByApartment = incMap.get(key) || {};
         out.push(...allocateSharedExpense(expense, basisByApartment, shareRule));
     }

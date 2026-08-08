@@ -12,7 +12,7 @@ export function periodKeyToYM(key) {
 // Nazivi mjeseci na bosanskom jeziku
 export const MONTH_NAMES = [
   "Januar", "Februar", "Mart", "April", "Maj", "Juni",
-  "Juli", "Avgust", "Septembar", "Oktobar", "Novembar", "Decembar"
+  "Juli", "August", "Septembar", "Oktobar", "Novembar", "Decembar"
 ];
 
 // Vraća naziv mjeseca (1-12 -> "Januar"-"Decembar")
