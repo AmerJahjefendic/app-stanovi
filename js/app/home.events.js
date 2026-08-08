@@ -8,7 +8,7 @@ import { dbGetAll, dbDeleteByIndex } from "../db/db.js";
 import { state } from "../shared/state.js";
 import { setShareRule } from "../shared/settings.js";
 import { periodLabel } from "../shared/parseFilename.js";
-import { APARTMENT_META, APARTMENT_DEFS, APT_ROLE } from "../shared/constants.js";
+import { apartmentsListActive } from "../shared/apartments.service.js";
 
 export function attachEvents(els, handlers) {
   const { render, handleImport, exportBackup, restoreBackupFile } = handlers;
@@ -154,21 +154,24 @@ export function attachEvents(els, handlers) {
       const month = Number(m[2]);
       const data = await loadPeriodData(year, month);
 
-      // Dinamički povlači meta podatke na osnovu odabranog apartmana
-      const aptMeta = APARTMENT_META[state.aptFilter] || APARTMENT_META.N;
+      const apartments = await apartmentsListActive();
+      const selectedApartment = apartments.find((apartment) => apartment.id === state.aptFilter) || null;
 
-      const def = APARTMENT_DEFS[state.aptFilter];
-      if (def?.role === APT_ROLE.OWNER) {
+      if (selectedApartment?.ownerType === "MANAGED") {
+        const def = { ...selectedApartment, apartment: selectedApartment.id };
         const core = computeNOwnerReport(
           { allIncomeItems: data.allIncomeItems, incomeItems: data.incomeItems, nCommission: data.nCommission },
-          { year, month, def: { ...def, apartment: state.aptFilter } }
+          { year, month, def }
         );
 
         const dto = {
           meta: {
             monthLabel: getMonthLabel(month),
             year,
-            ...aptMeta,
+            apartmentName: selectedApartment.name || selectedApartment.id,
+            apartmentAddress: selectedApartment.address || "",
+            ownerName: selectedApartment.ownerName || "",
+            agencyPct: selectedApartment.agencyPct,
           },
           rows: core.rows,
           stats: core.stats,
@@ -182,10 +185,13 @@ export function attachEvents(els, handlers) {
           {
             incomeMonthly: data.incomeMonthly,
             incomeItems: data.incomeItems,
+            allIncomeItems: data.allIncomeItems,
             expenses: data.expenses,
             nCommission: data.nCommission,
+            year,
+            month,
           },
-          { aptFilter: state.aptFilter, shareRule: state.shareRule }
+          { aptFilter: state.aptFilter, shareRule: state.shareRule, apartments }
         );
 
         renderPeriodReportToPrintRoot(report, {

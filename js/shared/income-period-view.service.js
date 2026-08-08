@@ -1,4 +1,4 @@
-﻿import {
+import {
   buildReservationFinancials,
   normalizeReservationPlatform,
 } from "./reservation-financial.service.js";
@@ -20,8 +20,8 @@ function matchesPlatform(item, platform) {
   );
 }
 
-function getDisplayAmount(item, segment) {
-  return item?.apartment === "N"
+function getDisplayAmount(item, segment, isManaged = false) {
+  return isManaged
     ? Number(segment?.splitBaseEur || 0)
     : Number(segment?.amountEur || 0);
 }
@@ -63,7 +63,7 @@ function buildPeriodRow(financial, segments, year, month = null) {
       getDisplayAmount(item, {
         amountEur: totals.amountEur,
         splitBaseEur: totals.splitBaseEur,
-      })
+      }, financial.totals.isManaged)
     ),
     nights: totals.nights,
 
@@ -74,6 +74,7 @@ function buildPeriodRow(financial, segments, year, month = null) {
     allocated_agency_eur: round2(totals.agencyCommissionEur),
     allocated_cleaning_fee_eur: round2(totals.cleaningFeeEur),
     allocated_platform_fee_eur: round2(totals.platformFeeEur),
+    is_managed: !!financial.totals.isManaged,
 
     allocation_mode:
       segments.length === 1
@@ -149,36 +150,40 @@ export function buildIncomePeriodView(
 }
 
 export function computeIncomePeriodTotals(rows = []) {
-  const sumsAZN = {
-    A: { income: 0, nights: 0 },
-    Z: { income: 0, nights: 0 },
-    N: { income: 0, nights: 0 },
+  const sumsAZN = {};
+
+  const ensureApartment = (apartment) => {
+    const key = String(apartment || "").trim();
+    if (!key) return null;
+    if (!sumsAZN[key]) sumsAZN[key] = { income: 0, nights: 0 };
+    return key;
   };
 
-  const nBreakdown = {
-    income_total: 0,
-    my_commission: 0,
-    owner: 0,
+  for (const apartment of ["A", "Z", "N"]) ensureApartment(apartment);
+
+  const managedBreakdowns = {};
+  const ensureManagedBreakdown = (apartment) => {
+    if (!managedBreakdowns[apartment]) {
+      managedBreakdowns[apartment] = { income_total: 0, my_commission: 0, owner: 0 };
+    }
+    return managedBreakdowns[apartment];
   };
 
   for (const row of rows) {
-    const apartment = row?.apartment;
-    if (!sumsAZN[apartment]) continue;
+    const apartment = ensureApartment(row?.apartment);
+    if (!apartment) continue;
 
-    const nights = Number(row.nights || 0);
-    sumsAZN[apartment].nights += nights;
+    sumsAZN[apartment].nights += Number(row.nights || 0);
 
-    if (apartment === "N") {
+    if (row?.is_managed) {
       const splitBase = Number(row.allocated_split_base_eur || 0);
       const agency = Number(row.allocated_agency_eur || 0);
       const owner = Number(row.allocated_owner_eur || 0);
-
-      nBreakdown.income_total += splitBase;
-      nBreakdown.my_commission += agency;
-      nBreakdown.owner += owner;
-
-      // U tabeli "Po apartmanu" N predstavlja našu proviziju.
-      sumsAZN.N.income += agency;
+      const breakdown = ensureManagedBreakdown(apartment);
+      breakdown.income_total += splitBase;
+      breakdown.my_commission += agency;
+      breakdown.owner += owner;
+      sumsAZN[apartment].income += agency;
     } else {
       sumsAZN[apartment].income += Number(
         row.allocated_amount_eur ?? row.amount_eur ?? 0
@@ -191,25 +196,22 @@ export function computeIncomePeriodTotals(rows = []) {
     sumsAZN[apartment].nights = Number(sumsAZN[apartment].nights || 0);
   }
 
-  nBreakdown.income_total = round2(nBreakdown.income_total);
-  nBreakdown.my_commission = round2(nBreakdown.my_commission);
-  nBreakdown.owner = round2(nBreakdown.owner);
+  for (const breakdown of Object.values(managedBreakdowns)) {
+    breakdown.income_total = round2(breakdown.income_total);
+    breakdown.my_commission = round2(breakdown.my_commission);
+    breakdown.owner = round2(breakdown.owner);
+  }
 
+  const nBreakdown = managedBreakdowns.N || { income_total: 0, my_commission: 0, owner: 0 };
   const total = {
-    income: round2(
-      sumsAZN.A.income +
-      sumsAZN.Z.income +
-      nBreakdown.income_total
+    income: round2(Object.entries(sumsAZN).reduce((sum, [apartment, value]) => {
+      const managed = managedBreakdowns[apartment];
+      return sum + Number(managed ? managed.income_total : value?.income || 0);
+    }, 0)),
+    nights: Object.values(sumsAZN).reduce(
+      (sum, value) => sum + Number(value?.nights || 0), 0
     ),
-    nights:
-      sumsAZN.A.nights +
-      sumsAZN.Z.nights +
-      sumsAZN.N.nights,
   };
 
-  return {
-    sumsAZN,
-    nBreakdown,
-    total,
-  };
+  return { sumsAZN, managedBreakdowns, nBreakdown, total };
 }

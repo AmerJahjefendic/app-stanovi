@@ -20,6 +20,8 @@ import { getCommissionConfig } from "../shared/commission-rules.service.js";
 import { renderYearCalendar, withLoading } from "../shared/ui.js";
 import { periodLabel } from "../shared/parseFilename.js";
 import { renderIncomeSummary, renderIncomeItemsTable, renderIncomeByApt } from "./income.ui.js";
+import { populateApartmentSelect } from "../shared/apartment-select.js";
+import { apartmentsListAll, OWNER_TYPE } from "../shared/apartments.service.js";
 
 console.log("[income.page.js] loaded", new Date().toISOString());
 window.__incomeLoaded = true;
@@ -73,6 +75,90 @@ const state = {
 };
 
 const CF_EUR = 10;
+let apartmentMap = new Map();
+
+function apartmentConfig(id) {
+    return apartmentMap.get(String(id || "").trim()) || null;
+}
+
+function isManagedApartmentId(id) {
+    const apt = apartmentConfig(id);
+    if (apt?.ownerType === OWNER_TYPE.MANAGED) return true;
+    if (apt?.ownerType === OWNER_TYPE.OWNED) return false;
+    // Legacy safety while old N records/configuration still exist.
+    return String(id || "").trim() === "N";
+}
+
+function managedSharesForApartment(id) {
+    const apt = apartmentConfig(id);
+    const pct = Number(apt?.agencyPct);
+    const agencyPct = Number.isFinite(pct) && pct >= 0 && pct <= 100 ? pct : 25;
+    return {
+        agencyPct,
+        ownerPct: 100 - agencyPct,
+        agencyShare: agencyPct / 100,
+        ownerShare: (100 - agencyPct) / 100,
+    };
+}
+
+async function resolveManagedCleaningFeeForWrite({
+    apartmentId,
+    platform,
+    feeModel = null,
+    existingItem = null,
+} = {}) {
+    const normalizedPlatform = String(platform || "").trim().toLowerCase();
+    const normalizedFeeModel =
+        normalizedPlatform === Platforms.AIRBNB
+            ? normalizeAirbnbFeeModel(feeModel)
+            : null;
+
+    // Airbnb SPLIT_FEE is a locked legacy rule: fixed CF = 10 EUR.
+    if (
+        normalizedPlatform === Platforms.AIRBNB &&
+        normalizedFeeModel === FeeModels.SPLIT_FEE
+    ) {
+        return CF_EUR;
+    }
+
+    // Editing the same historical reservation must keep its persisted snapshot.
+    // Legacy records without a snapshot keep the historical 10 EUR fallback.
+    const sameApartment =
+        existingItem &&
+        String(existingItem?.apartment || "").trim() === String(apartmentId || "").trim();
+    const samePlatform =
+        existingItem &&
+        String(existingItem?.platform || "").trim().toLowerCase() === normalizedPlatform;
+    const sameFeeModel =
+        normalizedPlatform !== Platforms.AIRBNB ||
+        normalizeAirbnbFeeModel(existingItem?.feeModel) === normalizedFeeModel;
+
+    if (sameApartment && samePlatform && sameFeeModel) {
+        const storedCleaningFee = Number(existingItem?.cleaningFeeEur);
+        if (Number.isFinite(storedCleaningFee) && storedCleaningFee > 0) {
+            return storedCleaningFee;
+        }
+        return CF_EUR;
+    }
+
+    // New MANAGED reservations use the apartment's current Cleaning Fee from Settings.
+    // Settings persists this value through the existing AIRBNB SINGLE_FEE rule.
+    const config = await getCommissionConfig({
+        apartmentId,
+        platform: Platforms.AIRBNB,
+        feeModel: FeeModels.SINGLE_FEE,
+    });
+
+    const configuredCleaningFee = Number(config?.cleaningFeeEur);
+    if (!Number.isFinite(configuredCleaningFee) || configuredCleaningFee <= 0) {
+        throw new Error(
+            "Nije podešen validan Cleaning Fee za ovaj MANAGED apartman. " +
+            "Otvorite Settings i unesite Cleaning Fee veći od 0 EUR."
+        );
+    }
+
+    return configuredCleaningFee;
+}
 // ---------- helpers ----------
 
 function round2(x) {
@@ -174,7 +260,7 @@ function toggleFeeModelField() {
     ).toLowerCase();
 
     const show =
-        apartment === "N" &&
+        isManagedApartmentId(apartment) &&
         platform === Platforms.AIRBNB;
 
     els.feeModelWrap?.classList.toggle(
@@ -189,17 +275,17 @@ function toggleFeeModelField() {
 
 function toggleFieldsByApartment() {
     const apt = els.incAddApt?.value || "A";
-    const isN = apt === "N";
+    const isManaged = isManagedApartmentId(apt);
 
     // Period boravka se za sve apartmane unosi kroz Check-in i Check-out.
     els.datesWrap?.classList.toggle("is-hidden", false);
 
     if (els.incAddCheckin) {
-        els.incAddCheckin.required = isN;
+        els.incAddCheckin.required = isManaged;
         els.incAddCheckin.disabled = false;
     }
     if (els.incAddCheckout) {
-        els.incAddCheckout.required = isN;
+        els.incAddCheckout.required = isManaged;
         els.incAddCheckout.disabled = false;
     }
 
@@ -224,7 +310,7 @@ function resetIncomeForm({ keepApt = true, keepPlatform = true } = {}) {
     if (els.incAddNote) els.incAddNote.value = "";
 
     if (!keepPlatform && els.incAddPlatform) els.incAddPlatform.value = "airbnb";
-    if (!keepApt && els.incAddApt) els.incAddApt.value = "A";
+    if (!keepApt && els.incAddApt && els.incAddApt.options.length) els.incAddApt.selectedIndex = 0;
 
     toggleFieldsByPlatform();
     toggleFieldsByApartment();
@@ -345,6 +431,7 @@ async function openIncomeItemForEdit(id) {
         return;
     }
     state.editingIncomeItemId = item.id;
+    await populateApartmentSelect(els.incAddApt, { includeApartmentId: item.apartment });
     if (els.incAddApt) els.incAddApt.value = item.apartment || "";
     if (els.incAddPlatform) {
         els.incAddPlatform.value = item.platform || Platforms.BOOKING;
@@ -360,7 +447,7 @@ async function openIncomeItemForEdit(id) {
     if (els.incAddAmount) {
         if (platform === "booking") {
             els.incAddAmount.value = item.gross_eur ?? item.amount_eur ?? "";
-        } else if (platform === "airbnb" && item.apartment === "N") {
+        } else if (platform === "airbnb" && (item.ownerType === OWNER_TYPE.MANAGED || item.apartment === "N")) {
             els.incAddAmount.value = item.gross_eur ?? item.amount_eur ?? "";
         } else {
             els.incAddAmount.value = item.amount_eur ?? "";
@@ -413,7 +500,7 @@ async function deleteIncomeItem(id) {
     if (!confirmed) return;
 
     try {
-        const affectedPeriods = item.apartment === "N"
+        const affectedPeriods = (item.ownerType === OWNER_TYPE.MANAGED || item.apartment === "N")
             ? getIncomeItemPeriodKeys(item)
             : new Set();
 
@@ -445,7 +532,8 @@ async function handleAddIncomeItem() {
 
     const apartment = els.incAddApt?.value || "A";
     const platform = (els.incAddPlatform?.value || "").toLowerCase();
-    const isN = apartment === "N";
+    const isManaged = isManagedApartmentId(apartment);
+    const managedShares = managedSharesForApartment(apartment);
 
     let amountToStore = 0;         // income_items.amount_eur (A/Z prihod; za N čuvamo splitBase)
     let grossAmount = 0;          // relevantno: Booking (gross) i N+Airbnb (gross reservation)
@@ -466,16 +554,22 @@ async function handleAddIncomeItem() {
         const grossEur = usd * rate;           // ✅ konvertovani payout = GROSS u EUR
         platformFee = 0;                       // ✅ VRBO fee (u tvom modelu) 0
 
-        if (isN) {
+        if (isManaged) {
             let calculation;
+            let cleaningFee;
             try {
+                cleaningFee = await resolveManagedCleaningFeeForWrite({
+                    apartmentId: apartment,
+                    platform: Platforms.VRBO,
+                    existingItem,
+                });
                 calculation = calculateManagedReservation({
                     platform: Platforms.VRBO,
                     amountUsd: usd,
                     fxUsdEur: rate,
-                    // TODO Phase 2:
-                    // koristiti cleaning fee iz commission_rules
-                    cleaningFee: CF_EUR,
+                    cleaningFee,
+                    agencyShare: managedShares.agencyShare,
+                    ownerShare: managedShares.ownerShare,
                 });
             } catch (error) {
                 return alert(error?.message || "NET za N mora biti > 0 (provjeri iznos/kurs).");
@@ -509,16 +603,22 @@ async function handleAddIncomeItem() {
         grossAmount = gross;
         platformFee = fee;
 
-        if (isN) {
+        if (isManaged) {
             let calculation;
+            let cleaningFee;
             try {
+                cleaningFee = await resolveManagedCleaningFeeForWrite({
+                    apartmentId: apartment,
+                    platform: Platforms.BOOKING,
+                    existingItem,
+                });
                 calculation = calculateManagedReservation({
                     platform: Platforms.BOOKING,
                     grossAmount: gross,
                     platformFee: fee,
-                    // TODO Phase 2:
-                    // koristiti cleaning fee iz commission_rules
-                    cleaningFee: CF_EUR,
+                    cleaningFee,
+                    agencyShare: managedShares.agencyShare,
+                    ownerShare: managedShares.ownerShare,
                 });
             } catch (error) {
                 return alert(error?.message || "NET za N mora biti > 0 (provjeri fee).");
@@ -540,7 +640,7 @@ async function handleAddIncomeItem() {
         if (!Number.isFinite(eur) || eur <= 0) return alert("Unesi ispravan iznos (EUR).");
 
         // ✅ N + Airbnb: Split Fee unos = payout; Single Fee unos = cijena rezervacije bez CF
-        if (platform === Platforms.AIRBNB && isN) {
+        if (platform === Platforms.AIRBNB && isManaged) {
             selectedFeeModel = normalizeAirbnbFeeModel(
                 els.incAddFeeModel?.value
             );
@@ -551,6 +651,8 @@ async function handleAddIncomeItem() {
                 try {
                     calculation = calculateAirbnbSplitFeeFromPayout({
                         payoutAmount: eur,
+                        agencyShare: managedShares.agencyShare,
+                        ownerShare: managedShares.ownerShare,
                     });
                 } catch (error) {
                     return alert(
@@ -572,7 +674,17 @@ async function handleAddIncomeItem() {
                     feeModel: FeeModels.SINGLE_FEE,
                 });
 
-                const cleaningFee = Number(config?.cleaningFeeEur);
+                let cleaningFee;
+                try {
+                    cleaningFee = await resolveManagedCleaningFeeForWrite({
+                        apartmentId: apartment,
+                        platform: Platforms.AIRBNB,
+                        feeModel: FeeModels.SINGLE_FEE,
+                        existingItem,
+                    });
+                } catch (error) {
+                    return alert(error?.message || "Nije podešen validan Cleaning Fee za ovaj apartman.");
+                }
 
                 const configuredPlatformFeePct =
                     Number(config?.platformFeePct);
@@ -583,16 +695,6 @@ async function handleAddIncomeItem() {
                         ? configuredPlatformFeePct
                         : 15.5;
 
-                if (
-                    !Number.isFinite(cleaningFee) ||
-                    cleaningFee <= 0
-                ) {
-                    return alert(
-                        "Nije podešen validan Airbnb Cleaning Fee za ovaj apartman. " +
-                        "Otvorite Settings i unesite Cleaning Fee veći od 0 EUR."
-                    );
-                }
-
                 let calculation;
 
                 try {
@@ -601,6 +703,8 @@ async function handleAddIncomeItem() {
                         feeModel: FeeModels.SINGLE_FEE,
                         grossAmount: eur,
                         cleaningFee,
+                        agencyShare: managedShares.agencyShare,
+                        ownerShare: managedShares.ownerShare,
                     });
                 } catch (error) {
                     return alert(
@@ -623,12 +727,20 @@ async function handleAddIncomeItem() {
 
             // Direct/Other nema platform fee.
             // CF se prvo izdvaja, ostatak ide u raspodjelu.
-            if (isN) {
-                cleaningFeeSnapshot = 10;
+            if (isManaged) {
+                try {
+                    cleaningFeeSnapshot = await resolveManagedCleaningFeeForWrite({
+                        apartmentId: apartment,
+                        platform,
+                        existingItem,
+                    });
+                } catch (error) {
+                    return alert(error?.message || "Nije podešen validan Cleaning Fee za ovaj apartman.");
+                }
                 splitBase = eur - cleaningFeeSnapshot;
 
                 if (!(Number.isFinite(splitBase) && splitBase > 0)) {
-                    return alert("Osnovica za N mora biti > 0.");
+                    return alert("Osnovica za MANAGED apartman mora biti > 0.");
                 }
 
                 platformFee = 0;
@@ -644,15 +756,15 @@ async function handleAddIncomeItem() {
     const period = periodFromInputsOrSelected(checkin);
     let nights = 0;
 
-    if (isN) {
-        if (!checkin || !checkout) return alert("Za apartman N moraš unijeti i Check-in i Check-out (obavezno radi izvještaja).");
+    if (isManaged) {
+        if (!checkin || !checkout) return alert("Za MANAGED apartman moraš unijeti i Check-in i Check-out (obavezno radi izvještaja).");
         const a = safeDate(checkin);
         const b = safeDate(checkout);
         if (!a || !b || b.getTime() <= a.getTime()) return alert("Check-out mora biti poslije check-in datuma.");
         nights = nightsFromDates(checkin, checkout);
     } else {
         if (!checkin || !checkout) {
-            return alert("Za apartmane A/Z unesi Check-in i Check-out.");
+            return alert("Unesi Check-in i Check-out.");
         }
         const a = safeDate(checkin);
         const b = safeDate(checkout);
@@ -669,23 +781,26 @@ async function handleAddIncomeItem() {
         month: period.month,
         apartment,
         platform,
+        ownerType: isManaged ? OWNER_TYPE.MANAGED : OWNER_TYPE.OWNED,
+        agencyPct: isManaged ? managedShares.agencyPct : null,
+        ownerPct: isManaged ? managedShares.ownerPct : null,
         feeModel:
-            platform === Platforms.AIRBNB && isN
+            platform === Platforms.AIRBNB && isManaged
                 ? selectedFeeModel
                 : null,
 
         cleaningFeeEur:
-            isN && Number.isFinite(cleaningFeeSnapshot)
+            isManaged && Number.isFinite(cleaningFeeSnapshot)
                 ? round2(cleaningFeeSnapshot)
                 : null,
 
         platformFeePct:
-            platform === Platforms.AIRBNB && isN &&
+            platform === Platforms.AIRBNB && isManaged &&
             Number.isFinite(platformFeePctSnapshot)
                 ? platformFeePctSnapshot
                 : null,
 
-        // Vrijednost koja se knjiži u income_items; za N čuvamo splitBase
+        // Vrijednost koja se knjiži u income_items; za MANAGED čuvamo splitBase
         amount_eur: round2(amountToStore),
 
         // Future/debug fields (ne traže DB migraciju)
@@ -717,12 +832,12 @@ async function handleAddIncomeItem() {
 
         // --- N: rebuild all months affected by the old/new stay period ---
         const affectedPeriods = new Set();
-        if (existingItem?.apartment === "N") {
+        if (existingItem?.ownerType === OWNER_TYPE.MANAGED || existingItem?.apartment === "N") {
             for (const key of getIncomeItemPeriodKeys(existingItem)) {
                 affectedPeriods.add(key);
             }
         }
-        if (isN) {
+        if (isManaged) {
             for (const key of getIncomeItemPeriodKeys(item)) {
                 affectedPeriods.add(key);
             }
@@ -846,13 +961,12 @@ function computeCurrentIncomeSums(filteredMonthly, filteredItems) {
     };
 
     for (const row of filteredMonthly || []) {
-        if (!sumsAZN[row.apartment]) continue;
+        const apartment = String(row?.apartment || "").trim();
+        if (!apartment) continue;
+        if (!sumsAZN[apartment]) sumsAZN[apartment] = { income: 0, nights: 0 };
 
-        sumsAZN[row.apartment].income +=
-            Number(row.income_eur || 0) || 0;
-
-        sumsAZN[row.apartment].nights +=
-            Number(row.nights || 0) || 0;
+        sumsAZN[apartment].income += Number(row.income_eur || 0) || 0;
+        sumsAZN[apartment].nights += Number(row.nights || 0) || 0;
     }
 
     const nBreakdown = {
@@ -860,21 +974,22 @@ function computeCurrentIncomeSums(filteredMonthly, filteredItems) {
         my_commission: round2(sumsAZN.N.income),
         owner: 0,
     };
+    const managedBreakdowns = nBreakdown.income_total || nBreakdown.my_commission
+        ? { N: nBreakdown }
+        : {};
 
     const total = {
-        income: round2(
-            sumsAZN.A.income +
-            sumsAZN.Z.income +
-            sumsAZN.N.income
+        income: round2(Object.values(sumsAZN).reduce(
+            (sum, value) => sum + Number(value?.income || 0), 0
+        )),
+        nights: Object.values(sumsAZN).reduce(
+            (sum, value) => sum + Number(value?.nights || 0), 0
         ),
-        nights:
-            sumsAZN.A.nights +
-            sumsAZN.Z.nights +
-            sumsAZN.N.nights,
     };
 
     return {
         sumsAZN,
+        managedBreakdowns,
         nBreakdown,
         total,
     };
@@ -913,7 +1028,7 @@ async function render() {
         state.platform
     );
 
-    const { sumsAZN, nBreakdown, total } =
+    const { sumsAZN, managedBreakdowns, nBreakdown, total } =
         computeCurrentIncomeSums(
             filteredMonthly,
             filteredItems
@@ -933,7 +1048,7 @@ async function render() {
         els.status.textContent = `Godina: ${y} — Stavki: ${itemCount}`;
     }
 
-    renderIncomeSummary(els.summary, { sumsAZN, nBreakdown, total });
+    renderIncomeSummary(els.summary, { sumsAZN, managedBreakdowns, nBreakdown, total });
 
     const itemsForTable = filteredItems.length
         ? filteredItems
@@ -944,7 +1059,7 @@ async function render() {
         }));
 
     renderIncomeItemsTable(els.itemsTable, itemsForTable);
-    renderIncomeByApt(els.byApt, sumsAZN);
+    renderIncomeByApt(els.byApt, sumsAZN, managedBreakdowns);
 }
 
 // ---------- attach ----------
@@ -1105,5 +1220,16 @@ function attach() {
     toggleFieldsByApartment();
 }
 
+async function initApartmentSelectors() {
+    const apartments = await apartmentsListAll();
+    apartmentMap = new Map(apartments.map((row) => [String(row.id), row]));
+    await populateApartmentSelect(els.incApt, { includeAll: true, allLabel: "Svi" });
+    await populateApartmentSelect(els.incAddApt);
+    state.apt = els.incApt?.value || "ALL";
+}
+
 attach();
-withLoading(async () => { await render(); });
+withLoading(async () => {
+    await initApartmentSelectors();
+    await render();
+});

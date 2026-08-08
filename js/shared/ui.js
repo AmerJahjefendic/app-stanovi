@@ -1,6 +1,6 @@
 // js/shared/ui.js
 import { fmtEUR, fmtNum } from "./utils.js";
-import { APARTMENTS, APT_LIST } from "./constants.js";
+import { APARTMENTS } from "./constants.js";
 
 export function renderPeriodList(root, periods, selectedKey) {
   root.innerHTML = "";
@@ -50,17 +50,18 @@ if (els.kpiExpenseRatio) {
 }
 
 export function renderIncomeTable(root, perApt, aptFilter) {
-  const rows = (aptFilter === "ALL") ? APT_LIST : [aptFilter];
+  const rows = aptFilter === "ALL" ? Object.keys(perApt || {}) : [aptFilter];
   let html = `<table><thead><tr><th>Apartman</th><th class="right">Prihod (EUR)</th><th class="right">Noćenja</th></tr></thead><tbody>`;
   for (const a of rows) {
-    html += `<tr><td><b>${a}</b></td><td class="right">${fmtEUR(perApt[a].income, { dashIfNull: true })}</td><td class="right">${fmtNum(perApt[a].nights, { dashIfNull: true })}</td></tr>`;
+    const row = perApt?.[a] || { income: 0, nights: 0 };
+    html += `<tr><td><b>${a}</b></td><td class="right">${fmtEUR(row.income, { dashIfNull: true })}</td><td class="right">${fmtNum(row.nights, { dashIfNull: true })}</td></tr>`;
   }
   html += `</tbody></table>`;
   root.innerHTML = html;
 }
 
 export function renderExpenseTable(root, report, aptFilter) {
-  const { perApt, sharedTotal, sharedA, sharedZ, nTotal } = report;
+  const { perApt = {}, sharedTotal = 0, sharedA = 0, sharedZ = 0 } = report || {};
 
   if (aptFilter === APARTMENTS.A) {
     root.innerHTML = `
@@ -84,26 +85,26 @@ export function renderExpenseTable(root, report, aptFilter) {
       </table>`;
     return;
   }
-  if (aptFilter === APARTMENTS.N) {
+
+  if (aptFilter && aptFilter !== "ALL") {
+    const total = Number(perApt?.[aptFilter]?.expenses || 0);
+    const label = aptFilter === APARTMENTS.N ? "Troškovi N (Apt N tab)" : `Troškovi ${aptFilter}`;
     root.innerHTML = `
       <table>
         <thead><tr><th>Stavka</th><th class="right">EUR</th></tr></thead>
-        <tbody>
-          <tr><td><b>Troškovi N (Apt N tab)</b></td><td class="right"><b>${fmtEUR(nTotal, { dashIfNull: true })}</b></td></tr>
-        </tbody>
+        <tbody><tr><td><b>${label}</b></td><td class="right"><b>${fmtEUR(total, { dashIfNull: true })}</b></td></tr></tbody>
       </table>`;
     return;
   }
 
-  // ALL
+  const rows = Object.entries(perApt || {});
+  const total = rows.reduce((sum, [, row]) => sum + Number(row?.expenses || 0), 0);
   root.innerHTML = `
     <table>
       <thead><tr><th>Stavka</th><th class="right">EUR</th></tr></thead>
       <tbody>
-        <tr><td>Troškovi A (dodijeljeno)</td><td class="right">${fmtEUR(perApt.A.expenses, { dashIfNull: true })}</td></tr>
-        <tr><td>Troškovi Z (dodijeljeno)</td><td class="right">${fmtEUR(perApt.Z.expenses, { dashIfNull: true })}</td></tr>
-        <tr><td>Troškovi N</td><td class="right">${fmtEUR(perApt.N.expenses, { dashIfNull: true })}</td></tr>
-        <tr><td><b>Ukupno</b></td><td class="right"><b>${fmtEUR(perApt.A.expenses + perApt.Z.expenses + perApt.N.expenses, { dashIfNull: true })}</b></td></tr>
+        ${rows.map(([id, row]) => `<tr><td>Troškovi ${id}</td><td class="right">${fmtEUR(row?.expenses, { dashIfNull: true })}</td></tr>`).join("")}
+        <tr><td><b>Ukupno</b></td><td class="right"><b>${fmtEUR(total, { dashIfNull: true })}</b></td></tr>
       </tbody>
     </table>`;
 }

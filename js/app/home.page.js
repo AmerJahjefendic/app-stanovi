@@ -36,6 +36,7 @@ import { setPickerLabel } from "./home.ui.js";
 import { loadPeriodData } from "./home.data.js";
 import { attachEvents } from "./home.events.js";
 import { exportBackupFile, restoreBackupFileAtomic } from "../backup/backup.service.js";
+import { populateApartmentSelect } from "../shared/apartment-select.js";
 
 const els = {
   mBtnBackup: document.getElementById("mBtnBackup"),
@@ -391,6 +392,9 @@ async function restoreBackupFile(file) {
 
   await render();
 }
+
+await populateApartmentSelect(els.aptFilter, { includeAll: true, allLabel: "Svi" });
+state.aptFilter = els.aptFilter?.value || "ALL";
 
 attachEvents(els, { render, handleImport, exportBackup, restoreBackupFile });
 loadSettings();

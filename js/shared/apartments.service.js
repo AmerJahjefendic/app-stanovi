@@ -228,6 +228,11 @@ export async function shareSetsListAll() {
         .sort((a, b) => (Number(a.sort) || 0) - (Number(b.sort) || 0) || String(a.name || a.id).localeCompare(String(b.name || b.id)));
 }
 
+export async function shareSetsListActive() {
+    const rows = await shareSetsListAll();
+    return rows.filter((row) => row?.isActive !== false);
+}
+
 export async function shareSetsGet(id) {
     const key = _trim(id);
     if (!key) return null;

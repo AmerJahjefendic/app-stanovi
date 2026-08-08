@@ -20,7 +20,29 @@ export function normalizeReservationFeeModel(value) {
 }
 
 export function isManagedReservation(item) {
+  // New/manual records persist ownerType as a financial snapshot.
+  // Legacy N records predate that snapshot and must remain MANAGED.
+  if (item?.ownerType === "MANAGED") return true;
+  if (item?.ownerType === "OWNED") return false;
   return item?.apartment === "N";
+}
+
+export function resolveReservationAgencyShare(item) {
+  const pct = Number(item?.agencyPct);
+  if (Number.isFinite(pct) && pct >= 0 && pct <= 100) {
+    return pct / 100;
+  }
+
+  // Backward compatibility for legacy N records without snapshot fields.
+  return DEFAULT_AGENCY_SHARE;
+}
+
+export function resolveReservationOwnerShare(item) {
+  const pct = Number(item?.ownerPct);
+  if (Number.isFinite(pct) && pct >= 0 && pct <= 100) {
+    return pct / 100;
+  }
+  return 1 - resolveReservationAgencyShare(item);
 }
 
 export function resolveReservationCleaningFee(item) {
@@ -74,11 +96,14 @@ export function resolveReservationFinancialTotals(item) {
     throw new RangeError("MANAGED prihod nema ispravne finansijske vrijednosti.");
   }
 
+  const agencyShare = managed ? resolveReservationAgencyShare(item) : 0;
+  const ownerShare = managed ? resolveReservationOwnerShare(item) : 0;
+
   const ownerIncomeEur = managed
-    ? roundReservationMoney(splitBaseEur * DEFAULT_OWNER_SHARE)
+    ? roundReservationMoney(splitBaseEur * ownerShare)
     : 0;
   const agencyCommissionEur = managed
-    ? roundReservationMoney(splitBaseEur * DEFAULT_AGENCY_SHARE + cleaningFeeEur)
+    ? roundReservationMoney(splitBaseEur * agencyShare + cleaningFeeEur)
     : 0;
 
   return {
@@ -88,6 +113,8 @@ export function resolveReservationFinancialTotals(item) {
     ownerIncomeEur,
     agencyCommissionEur,
     cleaningFeeEur,
+    agencyShare,
+    ownerShare,
     platformFeeEur: Number(item?.platform_fee_eur || 0) || 0,
   };
 }

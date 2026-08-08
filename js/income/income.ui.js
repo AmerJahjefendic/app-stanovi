@@ -2,53 +2,46 @@
 import { fmtEUR, fmtNum } from "../shared/utils.js";
 
 // ---------- SUMMARY BOX (A/Z/N breakdown) ----------
-export function renderIncomeSummary(root, { sumsAZN, nBreakdown, total }) {
-  const nb = nBreakdown || { income_total: 0, my_commission: 0, owner: 0 };
-  const nightsN = (sumsAZN?.N?.nights ?? 0);
+export function renderIncomeSummary(root, { sumsAZN, managedBreakdowns, nBreakdown, total }) {
+  const sums = sumsAZN || {};
+  const legacyN = nBreakdown || { income_total: 0, my_commission: 0, owner: 0 };
+  const managed = { ...(managedBreakdowns || {}) };
+  if (!managed.N && (legacyN.income_total || legacyN.my_commission || legacyN.owner)) {
+    managed.N = legacyN;
+  }
+  const apartments = Object.keys(sums).sort((a, b) => {
+    const priority = { A: 0, Z: 1, N: 2 };
+    const pa = priority[a] ?? 100;
+    const pb = priority[b] ?? 100;
+    return pa - pb || a.localeCompare(b, "bs");
+  });
+
+  const rows = apartments.map((apt) => {
+    if (managed[apt]) {
+      const breakdown = managed[apt];
+      const nights = sums?.[apt]?.nights ?? 0;
+      return `
+        <tr><td>${apt} - Ukupan prihod</td><td class="right">${fmtEUR(breakdown.income_total)}</td><td class="right">${fmtNum(nights)}</td></tr>
+        <tr><td>${apt} - Moja zarada</td><td class="right">${fmtEUR(breakdown.my_commission)}</td><td class="right">—</td></tr>
+        <tr><td>${apt} - Vlasnik</td><td class="right">${fmtEUR(breakdown.owner)}</td><td class="right">—</td></tr>`;
+    }
+
+    return `
+      <tr>
+        <td>${apt}</td>
+        <td class="right">${fmtEUR(sums?.[apt]?.income || 0)}</td>
+        <td class="right">${fmtNum(sums?.[apt]?.nights || 0)}</td>
+      </tr>`;
+  }).join("");
 
   root.innerHTML = `
     <table class="catTable">
-      <thead>
-        <tr>
-          <th>Apartman</th>
-          <th class="right">Prihod (EUR)</th>
-          <th class="right">Noćenja</th>
-        </tr>
-      </thead>
+      <thead><tr><th>Apartman</th><th class="right">Prihod (EUR)</th><th class="right">Noćenja</th></tr></thead>
       <tbody>
-        <tr>
-          <td>A</td>
-          <td class="right">${fmtEUR(sumsAZN.A.income)}</td>
-          <td class="right">${fmtNum(sumsAZN.A.nights)}</td>
-        </tr>
-        <tr>
-          <td>Z</td>
-          <td class="right">${fmtEUR(sumsAZN.Z.income)}</td>
-          <td class="right">${fmtNum(sumsAZN.Z.nights)}</td>
-        </tr>
-        <tr>
-          <td>N - Ukupan prihod</td>
-          <td class="right">${fmtEUR(nb.income_total)}</td>
-          <td class="right">${fmtNum(nightsN)}</td>
-        </tr>
-        <tr>
-          <td>N - Moja zarada</td>
-          <td class="right">${fmtEUR(nb.my_commission)}</td>
-          <td class="right">—</td>
-        </tr>
-        <tr>
-          <td>N - Vlasnik</td>
-          <td class="right">${fmtEUR(nb.owner)}</td>
-          <td class="right">—</td>
-        </tr>
-        <tr class="totalRow">
-          <td><strong>TOTAL</strong></td>
-          <td class="right"><strong>${fmtEUR(total.income)}</strong></td>
-          <td class="right"><strong>${fmtNum(total.nights)}</strong></td>
-        </tr>
+        ${rows}
+        <tr class="totalRow"><td><strong>TOTAL</strong></td><td class="right"><strong>${fmtEUR(total.income)}</strong></td><td class="right"><strong>${fmtNum(total.nights)}</strong></td></tr>
       </tbody>
-    </table>
-  `;
+    </table>`;
 }
 
 function platformLabel(p) {
@@ -175,43 +168,33 @@ export function renderIncomeItemsTable(root, items) {
 }
 
 // ---------- BY APARTMENT TABLE (simple) ----------
-export function renderIncomeByApt(root, sums) {
-  const apts = ["A", "Z", "N"];
+export function renderIncomeByApt(root, sums, managedBreakdowns = {}) {
+  const values = sums || {};
+  const apts = Object.keys(values).sort((a, b) => {
+    const priority = { A: 0, Z: 1, N: 2 };
+    const pa = priority[a] ?? 100;
+    const pb = priority[b] ?? 100;
+    return pa - pb || a.localeCompare(b, "bs");
+  });
 
   const total = apts.reduce(
     (acc, apt) => ({
-      income: acc.income + Number(sums?.[apt]?.income || 0),
-      nights: acc.nights + Number(sums?.[apt]?.nights || 0),
+      income: acc.income + Number(values?.[apt]?.income || 0),
+      nights: acc.nights + Number(values?.[apt]?.nights || 0),
     }),
     { income: 0, nights: 0 }
   );
 
   root.innerHTML = `
     <table class="catTable">
-      <thead>
-        <tr>
-          <th>Apartman</th>
-          <th class="right">Prihod (EUR)</th>
-          <th class="right">Noćenja</th>
-        </tr>
-      </thead>
+      <thead><tr><th>Apartman</th><th class="right">Prihod (EUR)</th><th class="right">Noćenja</th></tr></thead>
       <tbody>
         ${apts.map((apt) => {
-    const label = (apt === "N") ? "N (moja provizija)" : apt;
-    return `
-            <tr>
-              <td>${label}</td>
-              <td class="right">${fmtEUR(sums?.[apt]?.income || 0)}</td>
-              <td class="right">${fmtNum(sums?.[apt]?.nights || 0)}</td>
-            </tr>
-          `;
-  }).join("")}
-        <tr class="totalRow">
-          <td><strong>TOTAL</strong></td>
-          <td class="right"><strong>${fmtEUR(total.income)}</strong></td>
-          <td class="right"><strong>${fmtNum(total.nights)}</strong></td>
-        </tr>
+          const label = managedBreakdowns?.[apt] ? `${apt} (moja provizija)` : apt;
+          return `<tr><td>${label}</td><td class="right">${fmtEUR(values?.[apt]?.income || 0)}</td><td class="right">${fmtNum(values?.[apt]?.nights || 0)}</td></tr>`;
+        }).join("")}
+        <tr class="totalRow"><td><strong>TOTAL</strong></td><td class="right"><strong>${fmtEUR(total.income)}</strong></td><td class="right"><strong>${fmtNum(total.nights)}</strong></td></tr>
       </tbody>
-    </table>
-  `;
+    </table>`;
 }
+

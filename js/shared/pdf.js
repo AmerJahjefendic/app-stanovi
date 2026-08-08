@@ -26,10 +26,6 @@ export function renderPeriodReportToPrintRoot(
 
   const kpi = dto?.kpi ?? {};
   const perApt = dto?.perApt ?? {};
-  const a = perApt.A ?? null;
-  const z = perApt.Z ?? null;
-  const n = perApt.N ?? null;
-
   const isSingle = aptFilter && aptFilter !== "ALL";
   const single = isSingle ? (perApt?.[aptFilter] ?? null) : null;
 
@@ -37,7 +33,7 @@ export function renderPeriodReportToPrintRoot(
     (isSingle && aptFilter === "N") ? "Commission (EUR)" : "Income (EUR)";
 
   const showSharedBlock = !isSingle;   // raspodjela A/Z samo u ALL
-  const showPerAptTable = !isSingle;  // tabela A/Z/N samo u ALL
+  const showPerAptTable = !isSingle;  // dinamička tabela apartmana u ALL
 
 
   root.innerHTML = `
@@ -75,18 +71,10 @@ export function renderPeriodReportToPrintRoot(
             </tr>
           </thead>
           <tbody>
-            ${a ? `
+            ${Object.entries(perApt).map(([id, row]) => `
               <tr>
-                <td>A</td><td class="num">${fmtEur(a.income)}</td><td class="num">${fmtEur(a.expenses)}</td><td class="num">${fmtEur(a.net)}</td><td class="center">${esc(a.nights)}</td>
-              </tr>` : ""}
-            ${z ? `
-              <tr>
-                <td>Z</td><td class="num">${fmtEur(z.income)}</td><td class="num">${fmtEur(z.expenses)}</td><td class="num">${fmtEur(z.net)}</td><td class="center">${esc(z.nights)}</td>
-              </tr>` : ""}
-            ${n ? `
-              <tr>
-                <td>N</td><td class="num">${fmtEur(n.income)}</td><td class="num">${fmtEur(n.expenses)}</td><td class="num">${fmtEur(n.net)}</td><td class="center">${esc(n.nights)}</td>
-              </tr>` : ""}
+                <td>${esc(id)}</td><td class="num">${fmtEur(row?.income)}</td><td class="num">${fmtEur(row?.expenses)}</td><td class="num">${fmtEur(row?.net)}</td><td class="center">${esc(row?.nights)}</td>
+              </tr>`).join("")}
           </tbody>
         </table>
       ` : `

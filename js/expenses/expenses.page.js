@@ -19,6 +19,9 @@ import {
 } from "./expenses.ui.js";
 import { APARTMENTS, SHARE_RULE, SCOPE, FX, LS_KEYS } from "../shared/constants.js";
 import { getShareRule } from "../shared/settings.js";
+import { buildReservationFinancials } from "../shared/reservation-financial.service.js";
+import { populateApartmentSelect } from "../shared/apartment-select.js";
+import { apartmentsListActive } from "../shared/apartments.service.js";
 const CAT_KEY = "appstanovi_expense_categories";
 
 const els = {
@@ -136,58 +139,50 @@ function buildYearSeries(expenses, year, category, apt) {
  */
 function buildIncomeMap(incomeMonthlyRows, incomeItems) {
     const map = new Map();
-
-    // Prvo uzimamo income_items ako postoje - imaju prioritet
-    for (const item of incomeItems || []) {
-        if (item.apartment !== APARTMENTS.A && item.apartment !== APARTMENTS.Z) continue;
-
-        const key = periodKey(item.year, item.month);
+    const ensure = (key, apartment) => {
         if (!map.has(key)) {
             map.set(key, {
-                A: { income: 0, nights: 0 },
-                Z: { income: 0, nights: 0 },
+                A: { income: 0, nights: 0, hasItems: false },
+                Z: { income: 0, nights: 0, hasItems: false },
             });
         }
+        return map.get(key)[apartment];
+    };
 
-        const slot = map.get(key)[item.apartment];
-        const amount = Number(item.amount_eur || item.income_eur || 0);
-        slot.income += amount;
+    // Detaljni income_items koriste isti centralni Revenue Allocation kao Income/KPI.
+    // Time shared raspodjela prati stvarni mjesec boravka, a ne samo check-in mjesec.
+    const azItems = (incomeItems || []).filter(
+        (item) => item.apartment === APARTMENTS.A || item.apartment === APARTMENTS.Z
+    );
+    const financials = buildReservationFinancials(azItems, {
+        onError: (item, error) => console.warn("Shared expense income allocation skipped item", item?.id, error),
+    });
 
-        // Noćenja: prefer explicit nights, fallback na checkin/checkout
-        let n = 0;
-        if (item.nights != null && item.nights !== "") {
-            const nn = Number(item.nights);
-            n = Number.isFinite(nn) ? nn : 0;
-        } else {
-            n = nightsFromDates(item.checkin, item.checkout);
+    for (const financial of financials) {
+        const apartment = financial?.reservation?.apartment;
+        if (apartment !== APARTMENTS.A && apartment !== APARTMENTS.Z) continue;
+
+        for (const segment of financial.segments || []) {
+            const key = periodKey(segment.year, segment.month);
+            const slot = ensure(key, apartment);
+            slot.income += Number(segment.amountEur || 0);
+            slot.nights += Number(segment.nights || 0);
+            slot.hasItems = true;
         }
-        slot.nights += n;
     }
 
-    // Ako income_items nije dostupan ili je prazan, fallback na income_monthly
-    for (const r of incomeMonthlyRows || []) {
-        if (r.apartment !== APARTMENTS.A && r.apartment !== APARTMENTS.Z) continue;
+    // Legacy mjesečni import ostaje fallback, ali PO APARTMANU.
+    // Ako npr. Z ima detaljne stavke, a A samo income_monthly, A se više ne gubi.
+    for (const row of incomeMonthlyRows || []) {
+        const apartment = row.apartment;
+        if (apartment !== APARTMENTS.A && apartment !== APARTMENTS.Z) continue;
 
-        const key = periodKey(r.year, r.month);
+        const key = periodKey(row.year, row.month);
+        const slot = ensure(key, apartment);
+        if (slot.hasItems) continue;
 
-        // Ako već postoje podaci iz income_items za ovaj period, preskačemo income_monthly
-        if (map.has(key)) {
-            const existing = map.get(key);
-            const hasItems = existing.A.income > 0 || existing.Z.income > 0 ||
-                existing.A.nights > 0 || existing.Z.nights > 0;
-            if (hasItems) continue;
-        }
-
-        if (!map.has(key)) {
-            map.set(key, {
-                A: { income: 0, nights: 0 },
-                Z: { income: 0, nights: 0 },
-            });
-        }
-
-        const slot = map.get(key)[r.apartment];
-        slot.income += Number(r.income_eur || 0);
-        slot.nights += Number(r.nights || 0);
+        slot.income += Number(row.income_eur || 0);
+        slot.nights += Number(row.nights || 0);
     }
 
     return map;
@@ -241,27 +236,42 @@ function buildRenderableExpenses(rawExpenses, incomeMonthlyRows, incomeItems, sh
     }
     return out;
 }
-function computeExpensesByApt(expenses) {
-    const sums = { A: 0, Z: 0, N: 0 };
+function computeExpensesByApt(expenses, apartments) {
+    const aptList = Array.isArray(apartments) ? apartments : [];
+    const sums = Object.fromEntries(aptList.map((apt) => [apt.id, 0]));
+
     for (const e of expenses || []) {
-        const apt = e.apartment;
-        if (apt === "A" || apt === "Z" || apt === "N") {
-            sums[apt] += Number(e.amount_eur || 0);
-        }
+        const apt = String(e?.apartment || "").trim();
+        if (!apt) continue;
+        if (!(apt in sums)) sums[apt] = 0;
+        sums[apt] += Number(e.amount_eur || 0);
     }
-    const total = sums.A + sums.Z + sums.N;
-    return { sums, total };
+
+    const total = Object.values(sums).reduce((sum, value) => sum + Number(value || 0), 0);
+    return { sums, total, apartments: aptList };
 }
 
 function renderExpensesByApt(root, data) {
     if (!root) return;
-    const { sums, total } = data;
+    const { sums, total, apartments } = data;
 
     // koristi isti formatter kao ui.js (jednostavno, bez importa)
     const fmtEUR = (x) => {
         const n = Number(x || 0);
         return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(n);
     };
+
+    const knownIds = new Set((apartments || []).map((apt) => apt.id));
+    const rows = (apartments || []).map((apt) => `
+        <tr><td><b>${apt.name || apt.id}</b></td><td class="right">${fmtEUR(sums[apt.id])}</td></tr>`);
+
+    // Defensive compatibility: ako postoji trošak za apartman koji više nije u registryju,
+    // i dalje ga prikaži umjesto da finansijski podatak nestane iz tabele.
+    for (const aptId of Object.keys(sums)) {
+        if (knownIds.has(aptId)) continue;
+        rows.push(`
+        <tr><td><b>${aptId}</b></td><td class="right">${fmtEUR(sums[aptId])}</td></tr>`);
+    }
 
     root.innerHTML = `
     <table class="catTable">
@@ -272,9 +282,7 @@ function renderExpensesByApt(root, data) {
         </tr>
       </thead>
       <tbody>
-        <tr><td><b>A</b></td><td class="right">${fmtEUR(sums.A)}</td></tr>
-        <tr><td><b>Z</b></td><td class="right">${fmtEUR(sums.Z)}</td></tr>
-        <tr><td><b>N</b></td><td class="right">${fmtEUR(sums.N)}</td></tr>
+        ${rows.join("")}
         <tr class="totalRow">
           <td><b>UKUPNO</b></td>
           <td class="right"><b>${fmtEUR(total)}</b></td>
@@ -364,7 +372,8 @@ async function openExpenseForEdit(id) {
                 : SCOPE.SHARED;
     }
     if (els.expAddApt) {
-        els.expAddApt.value = expense.apartment || APARTMENTS.A;
+        await populateApartmentSelect(els.expAddApt, { includeApartmentId: expense.apartment });
+        els.expAddApt.value = expense.apartment || els.expAddApt.value;
     }
     if (els.expAddDate) {
         els.expAddDate.value = expense.date || "";
@@ -651,7 +660,10 @@ function applyFilters(expenses) {
  * @returns {Promise<void>}
  */
 async function render() {
-    const all = await load();
+    const [all, activeApartments] = await Promise.all([
+        load(),
+        apartmentsListActive(),
+    ]);
 
     // ===== Calendar init + render =====
     const imports = await dbGetAll("imports");
@@ -754,7 +766,7 @@ async function render() {
         els.listToggle.textContent = state.listCollapsed ? "Prikaži" : "Sakrij";
     }
 
-    renderExpensesByApt(els.byApt, computeExpensesByApt(filtered));
+    renderExpensesByApt(els.byApt, computeExpensesByApt(filtered, activeApartments));
     renderExpensesByCategory(els.byCat, filtered);
     renderExpensesList(els.list, filtered);
 }
@@ -1037,6 +1049,9 @@ function attach() {
 
 (async () => {
     await loadCategoryAliases();
+    await populateApartmentSelect(els.expApt, { includeAll: true, allLabel: "Svi" });
+    await populateApartmentSelect(els.expAddApt);
+    state.apt = els.expApt?.value || "ALL";
     attach();
 
     // Preslušaj promjene shareRule iz drugih tabova
