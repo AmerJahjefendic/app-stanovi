@@ -285,3 +285,49 @@ Arhitekturna pravila
 - Ne mijenjati strukturu foldera
 - Ne duplicirati logiku iz metrics.service.js
 - Prije izmjene UI-a objasniti šta se tačno mijenja
+---
+
+# Current Architecture (v1.5.0)
+
+Od verzije v1.5.0 Apartment Registry predstavlja jedini Source of Truth za sve runtime module aplikacije.
+
+Svi aktivni apartmani čitaju se isključivo iz Apartment Registry.
+
+Obuhvaćeni moduli:
+
+- Home
+- Income
+- Expenses
+- KPI
+- Reports
+- PDF
+- Owner Reports
+- Revenue Allocation
+- Smart Shopping
+
+Runtime hardcoded A/Z/N logika više ne postoji.
+
+Preostale reference postoje isključivo radi:
+
+- legacy Excel Import
+- migration compatibility
+- backup compatibility
+- historical financial compatibility
+
+Revenue Allocation ostaje jedini izvor raspodjele prihoda.
+
+Managed Financial Engine ostaje jedini izvor obračuna MANAGED apartmana.
+
+Cleaning Fee Snapshot model garantuje da promjena konfiguracije apartmana ne utiče na historijske rezervacije.
+
+Generic Shared model koristi shareKey kao identitet shared grupe.
+
+Smart Shopping koristi isti Apartment Registry model kao ostatak aplikacije.
+
+Fresh Install više ne kreira sistemske apartmane.
+
+Apartment Registry se popunjava isključivo kroz:
+
+- Settings
+- Restore
+- buduće importe.
