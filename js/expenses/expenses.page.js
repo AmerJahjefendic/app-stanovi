@@ -21,7 +21,8 @@ import { APARTMENTS, SHARE_RULE, SCOPE, FX, LS_KEYS } from "../shared/constants.
 import { getShareRule } from "../shared/settings.js";
 import { buildReservationFinancials } from "../shared/reservation-financial.service.js";
 import { populateApartmentSelect } from "../shared/apartment-select.js";
-import { apartmentsListActive } from "../shared/apartments.service.js";
+import { apartmentsListActive, apartmentsListByShareKey, shareSetsListActive } from "../shared/apartments.service.js";
+import { allocateSharedExpense, LEGACY_SHARED_KEY, resolveSharedExpenseMembers } from "../shared/shared-expense-allocation.service.js";
 const CAT_KEY = "appstanovi_expense_categories";
 
 const els = {
@@ -39,6 +40,8 @@ const els = {
     expAddCategory: document.getElementById("expAddCategory"),
     btnAddCategory: document.getElementById("btnAddCategory"),
     expAddScope: document.getElementById("expAddScope"),
+    expShareWrap: document.getElementById("expShareWrap"),
+    expAddShareKey: document.getElementById("expAddShareKey"),
     expAptWrap: document.getElementById("expAptWrap"),
     expAddApt: document.getElementById("expAddApt"),
     expAddDate: document.getElementById("expAddDate"),
@@ -130,52 +133,44 @@ function buildYearSeries(expenses, year, category, apt) {
 
 
 /**
- * Kreira mapu prihoda i noćenja za A/Z apartmane po periodima (za dijeljenje shared troškova)
- * Prioritet: income_items > income_monthly
- * @param {Array<Object>} incomeMonthlyRows - Mjesečni prihodi iz income_monthly tabele
- * @param {Array<Object>} incomeItems - Detaljne stavke prihoda iz income_items tabele
- * @returns {Map<string, {A: {income: number, nights: number}, Z: {income: number, nights: number}}>} 
- *          Mapa gdje je ključ "YYYY-MM", vrijednost objekti sa podacima za A i Z apartmane
+ * Kreira mapu prihoda/noćenja po periodu i apartment ID-u za shared raspodjelu.
+ * Revenue Allocation ostaje jedini izvor raspodjele rezervacija po mjesecima.
  */
-function buildIncomeMap(incomeMonthlyRows, incomeItems) {
+function buildIncomeMap(incomeMonthlyRows, incomeItems, apartmentIds) {
+    const memberIds = new Set((apartmentIds || []).map((id) => String(id || "").trim()).filter(Boolean));
     const map = new Map();
+
     const ensure = (key, apartment) => {
-        if (!map.has(key)) {
-            map.set(key, {
-                A: { income: 0, nights: 0, hasItems: false },
-                Z: { income: 0, nights: 0, hasItems: false },
-            });
-        }
-        return map.get(key)[apartment];
+        if (!map.has(key)) map.set(key, {});
+        const period = map.get(key);
+        if (!period[apartment]) period[apartment] = { income: 0, nights: 0, hasItems: false };
+        return period[apartment];
     };
 
-    // Detaljni income_items koriste isti centralni Revenue Allocation kao Income/KPI.
-    // Time shared raspodjela prati stvarni mjesec boravka, a ne samo check-in mjesec.
-    const azItems = (incomeItems || []).filter(
-        (item) => item.apartment === APARTMENTS.A || item.apartment === APARTMENTS.Z
-    );
-    const financials = buildReservationFinancials(azItems, {
+    const relevantItems = (incomeItems || []).filter((item) => memberIds.has(String(item?.apartment || "").trim()));
+    const financials = buildReservationFinancials(relevantItems, {
         onError: (item, error) => console.warn("Shared expense income allocation skipped item", item?.id, error),
     });
 
     for (const financial of financials) {
-        const apartment = financial?.reservation?.apartment;
-        if (apartment !== APARTMENTS.A && apartment !== APARTMENTS.Z) continue;
+        const apartment = String(financial?.reservation?.apartment || "").trim();
+        if (!memberIds.has(apartment)) continue;
 
         for (const segment of financial.segments || []) {
             const key = periodKey(segment.year, segment.month);
             const slot = ensure(key, apartment);
-            slot.income += Number(segment.amountEur || 0);
+            slot.income += financial.totals.isManaged
+                ? Number(segment.splitBaseEur || 0)
+                : Number(segment.amountEur || 0);
             slot.nights += Number(segment.nights || 0);
             slot.hasItems = true;
         }
     }
 
-    // Legacy mjesečni import ostaje fallback, ali PO APARTMANU.
-    // Ako npr. Z ima detaljne stavke, a A samo income_monthly, A se više ne gubi.
+    // Legacy import fallback ostaje po apartmanu.
     for (const row of incomeMonthlyRows || []) {
-        const apartment = row.apartment;
-        if (apartment !== APARTMENTS.A && apartment !== APARTMENTS.Z) continue;
+        const apartment = String(row?.apartment || "").trim();
+        if (!memberIds.has(apartment)) continue;
 
         const key = periodKey(row.year, row.month);
         const slot = ensure(key, apartment);
@@ -188,52 +183,35 @@ function buildIncomeMap(incomeMonthlyRows, incomeItems) {
     return map;
 }
 
-/**
- * Dijeli SHARED trošak između A i Z apartmana po odabranom pravilu (INCOME ili NIGHTS)
- * @param {Object} exp - Trošak sa scope="SHARED"
- * @param {{A: {income: number, nights: number}, Z: {income: number, nights: number}}} az - Podaci o prihodima/noćenjima za A/Z
- * @param {string} shareRule - Pravilo dijeljenja: "INCOME" ili "NIGHTS"
- * @returns {Array<Object>} Dva nova troška (za A i za Z) sa proporcionalnim iznosima
- */
-function splitSharedExpense(exp, az, shareRule) {
-    const aBase = shareRule === SHARE_RULE.INCOME ? az.A.income : az.A.nights;
-    const zBase = shareRule === SHARE_RULE.INCOME ? az.Z.income : az.Z.nights;
-    const denom = aBase + zBase;
-
-    const ratioA = denom > 0 ? aBase / denom : 0.5;
-    const ratioZ = 1 - ratioA;
-
-    const amount = Number(exp.amount_eur || 0);
-    const base = { ...exp, scope: SCOPE.SHARED_SPLIT, derived_from: exp.id };
-
-    return [
-        { ...base, apartment: APARTMENTS.A, amount_eur: amount * ratioA },
-        { ...base, apartment: APARTMENTS.Z, amount_eur: amount * ratioZ },
-    ];
+function collectSharedMemberIds(expenses) {
+    const ids = new Set();
+    for (const expense of expenses || []) {
+        if (expense?.scope !== SCOPE.SHARED) continue;
+        for (const member of resolveSharedExpenseMembers(expense)) ids.add(member);
+    }
+    return [...ids];
 }
 
 /**
- * Transformiše sirove troškove u prikazive troškove - dijeli SHARED troškove na A/Z
- * @param {Array<Object>} rawExpenses - Sirovi troškovi iz baze
- * @param {Array<Object>} incomeMonthlyRows - Mjesečni prihodi
- * @param {Array<Object>} incomeItems - Detaljne stavke prihoda
- * @param {string} shareRule - Pravilo dijeljenja: "INCOME" ili "NIGHTS"
- * @returns {Array<Object>} Troškovi gdje su SHARED troškovi podijeljeni na dva reda (A i Z)
+ * Transformiše SHARED trošak u derived redove za članove njegove shared grupe.
  */
 function buildRenderableExpenses(rawExpenses, incomeMonthlyRows, incomeItems, shareRule) {
-    const incMap = buildIncomeMap(incomeMonthlyRows, incomeItems);
-    const out = [];
     const src = Array.isArray(rawExpenses) ? rawExpenses : [];
+    const memberIds = collectSharedMemberIds(src);
+    const incMap = buildIncomeMap(incomeMonthlyRows, incomeItems, memberIds);
+    const out = [];
 
-    for (const e of src) {
-        if (e.scope === SCOPE.SHARED) {
-            const key = periodKey(e.year, e.month);
-            const az = incMap.get(key) || { A: { income: 0, nights: 0 }, Z: { income: 0, nights: 0 } };
-            out.push(...splitSharedExpense(e, az, shareRule));
-        } else {
-            out.push(e);
+    for (const expense of src) {
+        if (expense.scope !== SCOPE.SHARED) {
+            out.push(expense);
+            continue;
         }
+
+        const key = periodKey(expense.year, expense.month);
+        const basisByApartment = incMap.get(key) || {};
+        out.push(...allocateSharedExpense(expense, basisByApartment, shareRule));
     }
+
     return out;
 }
 function computeExpensesByApt(expenses, apartments) {
@@ -312,6 +290,38 @@ function getFxRate() {
     return Number.isFinite(v) && v > 0 ? v : FX.DEFAULT_EUR_TO_BAM;
 }
 
+async function populateSharedSetSelect(select, { includeShareKey = null } = {}) {
+    if (!select) return;
+
+    const [shareSets, apartments] = await Promise.all([
+        shareSetsListActive(),
+        apartmentsListActive(),
+    ]);
+
+    const options = [];
+    for (const shareSet of shareSets) {
+        const members = apartments.filter((apt) => apt?.shareKey === shareSet.id);
+        if (members.length < 2 && shareSet.id !== includeShareKey) continue;
+        options.push({
+            id: shareSet.id,
+            label: `${shareSet.name || shareSet.id} (${members.map((apt) => apt.name || apt.id).join(" + ") || "bez aktivnih članova"})`,
+        });
+    }
+
+    if (includeShareKey && !options.some((option) => option.id === includeShareKey)) {
+        options.push({ id: includeShareKey, label: includeShareKey });
+    }
+
+    const previous = select.value;
+    select.innerHTML = options
+        .map((option) => `<option value="${option.id}">${option.label}</option>`)
+        .join("");
+
+    const preferred = [previous, includeShareKey, LEGACY_SHARED_KEY, options[0]?.id]
+        .find((value) => value && options.some((option) => option.id === value));
+    if (preferred) select.value = preferred;
+}
+
 /**
  * Otvara modal za dodavanje novog troška
  */
@@ -371,6 +381,11 @@ async function openExpenseForEdit(id) {
                 ? SCOPE.APARTMENT
                 : SCOPE.SHARED;
     }
+    if (expense.scope === SCOPE.SHARED) {
+        const shareKey = expense.shareKey || LEGACY_SHARED_KEY;
+        await populateSharedSetSelect(els.expAddShareKey, { includeShareKey: shareKey });
+        if (els.expAddShareKey) els.expAddShareKey.value = shareKey;
+    }
     if (els.expAddApt) {
         await populateApartmentSelect(els.expAddApt, { includeApartmentId: expense.apartment });
         els.expAddApt.value = expense.apartment || els.expAddApt.value;
@@ -425,9 +440,10 @@ async function handleDeleteExpense(id) {
 
     let extraInfo = "";
     if (expense.scope === SCOPE.SHARED) {
+        const members = resolveSharedExpenseMembers(expense);
         extraInfo =
             "\n\n⚠ Ovo je SHARED trošak." +
-            "\nBrisanjem će biti uklonjen iz obračuna za oba apartmana (A i Z).";
+            `\nBrisanjem će biti uklonjen iz obračuna za shared grupu (${members.join(" + ") || "nepoznati članovi"}).`;
     } else {
         extraInfo =
             `\n\nApartman: ${expense.apartment}`;
@@ -465,7 +481,9 @@ async function handleDeleteExpense(id) {
 function syncScopeUI() {
     const sc = els.expAddScope?.value || SCOPE.SHARED;
     const showApt = sc === SCOPE.APARTMENT;
+    const showShared = sc === SCOPE.SHARED;
     els.expAptWrap?.classList.toggle("is-hidden", !showApt);
+    els.expShareWrap?.classList.toggle("is-hidden", !showShared);
 }
 
 /**
@@ -810,6 +828,33 @@ async function handleSaveExpense() {
             ? (els.expAddApt?.value || APARTMENTS.A)
             : null;
 
+    let shareKey = null;
+    let sharedMembers = null;
+    if (scope === SCOPE.SHARED) {
+        shareKey = String(els.expAddShareKey?.value || "").trim();
+        if (!shareKey) {
+            alert("Odaberi shared grupu.");
+            return;
+        }
+
+        if (
+            existingExpense?.scope === SCOPE.SHARED &&
+            (existingExpense.shareKey || LEGACY_SHARED_KEY) === shareKey &&
+            Array.isArray(existingExpense.sharedMembers) &&
+            existingExpense.sharedMembers.length >= 2
+        ) {
+            sharedMembers = [...existingExpense.sharedMembers];
+        } else {
+            const members = await apartmentsListByShareKey(shareKey);
+            sharedMembers = members.map((apt) => apt.id);
+        }
+
+        if (sharedMembers.length < 2) {
+            alert("Shared grupa mora imati najmanje dva aktivna apartmana.");
+            return;
+        }
+    }
+
     const dateStr = els.expAddDate?.value || "";
     let period = null;
 
@@ -845,6 +890,8 @@ async function handleSaveExpense() {
         amount_eur: amountEur,
         scope,
         apartment,
+        shareKey,
+        sharedMembers,
         raw_category: categoryRaw,
         category: categoryRaw,
         date: dateStr || null,
@@ -1051,6 +1098,7 @@ function attach() {
     await loadCategoryAliases();
     await populateApartmentSelect(els.expApt, { includeAll: true, allLabel: "Svi" });
     await populateApartmentSelect(els.expAddApt);
+    await populateSharedSetSelect(els.expAddShareKey);
     state.apt = els.expApt?.value || "ALL";
     attach();
 

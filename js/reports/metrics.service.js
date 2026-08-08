@@ -6,6 +6,7 @@ import {
   getReservationSegmentForPeriod,
 } from "../shared/reservation-financial.service.js";
 import { buildIncomePeriodView } from "../shared/income-period-view.service.js";
+import { allocateSharedExpense, resolveSharedExpenseMembers } from "../shared/shared-expense-allocation.service.js";
 
 const LEGACY_APARTMENTS = [APARTMENTS.A, APARTMENTS.Z, APARTMENTS.N];
 
@@ -30,14 +31,19 @@ function collectApartmentIds(...dataSets) {
   // Keep legacy order stable, then append dynamic apartment ids from actual data.
   LEGACY_APARTMENTS.forEach(add);
   for (const dataSet of dataSets) {
-    for (const row of dataSet || []) add(row?.apartment);
+    for (const row of dataSet || []) {
+      add(row?.apartment);
+      if (row?.scope === SCOPE.SHARED) {
+        resolveSharedExpenseMembers(row).forEach(add);
+      }
+    }
   }
   return ids;
 }
 
 function ensureRow(map, id) {
   if (!id) return null;
-  if (!map[id]) map[id] = { income: 0, nights: 0 };
+  if (!map[id]) map[id] = { income: 0, nights: 0, shareIncome: 0 };
   return map[id];
 }
 
@@ -53,21 +59,16 @@ function roundPerApt(perApt) {
 }
 
 // Helper to build KPI from per-apartment aggregates.
-// Existing A/Z shared and N commission semantics remain unchanged.
-function buildKpiFromPerApt(perApt, aptFilter, sharedTotal, nCommission, sharedA, sharedZ, individualTotals) {
+function buildKpiFromPerApt(perApt, aptFilter, sharedTotal, nCommission, sharedAllocations, individualTotals) {
   if (aptFilter && aptFilter !== "ALL") {
     const r = perApt[aptFilter] || { income: 0, expenses: 0, net: 0, nights: 0 };
-    let sharedAlloc = 0;
-    if (aptFilter === APARTMENTS.A) sharedAlloc = sharedA;
-    else if (aptFilter === APARTMENTS.Z) sharedAlloc = sharedZ;
-
     return {
       income: round2(r.income),
       expenses: round2(r.expenses),
       net: round2(r.net),
       nights: round2(r.nights),
       sharedTotal: round2(sharedTotal),
-      sharedAlloc: round2(sharedAlloc),
+      sharedAlloc: round2(sharedAllocations?.[aptFilter] || 0),
       aptExpenses: round2(individualTotals?.[aptFilter] || 0),
       nCommission: round2(nCommission),
     };
@@ -107,7 +108,7 @@ function nightsFromDates(checkin, checkout) {
 // Existing financial service decides whether a reservation is managed.
 function computeIncomeFromReservationSegments(incomeItems, year, month, apartmentIds) {
   const out = Object.fromEntries(
-    apartmentIds.map((apartment) => [apartment, { income: 0, nights: 0, itemsCount: 0 }])
+    apartmentIds.map((apartment) => [apartment, { income: 0, nights: 0, shareIncome: 0, itemsCount: 0 }])
   );
 
   const financials = buildReservationFinancials(incomeItems, {
@@ -119,13 +120,16 @@ function computeIncomeFromReservationSegments(incomeItems, year, month, apartmen
   for (const financial of financials) {
     const apt = apartmentId(financial?.reservation?.apartment);
     if (!apt) continue;
-    if (!out[apt]) out[apt] = { income: 0, nights: 0, itemsCount: 0 };
+    if (!out[apt]) out[apt] = { income: 0, nights: 0, shareIncome: 0, itemsCount: 0 };
 
     const segment = getReservationSegmentForPeriod(financial, year, month);
     if (!segment) continue;
 
     out[apt].income += financial.totals.isManaged
       ? Number(segment.agencyCommissionEur || 0) || 0
+      : Number(segment.amountEur || 0) || 0;
+    out[apt].shareIncome += financial.totals.isManaged
+      ? Number(segment.splitBaseEur || 0) || 0
       : Number(segment.amountEur || 0) || 0;
     out[apt].nights += Number(segment.nights || 0) || 0;
     out[apt].itemsCount += 1;
@@ -156,7 +160,7 @@ export function computePeriodReport(
   }
 
   const incomeByApt = Object.fromEntries(
-    apartmentIds.map((a) => [a, { income: 0, nights: 0 }])
+    apartmentIds.map((a) => [a, { income: 0, nights: 0, shareIncome: 0 }])
   );
 
   const hasTargetPeriod = Number.isInteger(Number(year)) && Number.isInteger(Number(month));
@@ -171,6 +175,7 @@ export function computePeriodReport(
     for (const [apartment, row] of Object.entries(bySegments)) {
       const target = ensureRow(incomeByApt, apartment);
       target.income = row.income || 0;
+      target.shareIncome = row.shareIncome || 0;
       target.nights = row.nights || 0;
     }
   } else if (periodItemsArr.length > 0) {
@@ -178,7 +183,9 @@ export function computePeriodReport(
       const apartment = apartmentId(item?.apartment);
       if (!apartment) continue;
       const target = ensureRow(incomeByApt, apartment);
-      target.income += Number(item?.amount_eur || item?.income_eur || 0) || 0;
+      const itemIncome = Number(item?.amount_eur || item?.income_eur || 0) || 0;
+      target.income += itemIncome;
+      target.shareIncome += itemIncome;
       const explicitNights = Number(item?.nights);
       target.nights += Number.isFinite(explicitNights)
         ? explicitNights
@@ -189,12 +196,15 @@ export function computePeriodReport(
       const apartment = apartmentId(row?.apartment);
       if (!apartment) continue;
       const target = ensureRow(incomeByApt, apartment);
-      target.income += Number(row.income_eur || 0) || 0;
+      const monthlyIncome = Number(row.income_eur || 0) || 0;
+      target.income += monthlyIncome;
+      target.shareIncome += monthlyIncome;
       target.nights += Number(row.nights || 0) || 0;
     }
   }
 
-  // Direct apartment expenses are dynamic. Existing SHARED A/Z allocation formula stays unchanged.
+  // Direct apartment expenses are dynamic. SHARED expenses use their persisted
+  // member snapshot, so multiple independent shared groups can coexist.
   const shared = expArr.filter((e) => e.scope === SCOPE.SHARED);
   const individualTotals = {};
   for (const e of expArr) {
@@ -205,28 +215,26 @@ export function computePeriodReport(
     ensureRow(incomeByApt, id);
   }
 
-  const sharedTotal = shared.reduce((s, e) => s + (Number(e.amount_eur || 0) || 0), 0);
-  const A = ensureRow(incomeByApt, APARTMENTS.A);
-  const Z = ensureRow(incomeByApt, APARTMENTS.Z);
+  const sharedAllocations = {};
+  let sharedTotal = 0;
+  const sharedBasis = Object.fromEntries(
+    Object.entries(incomeByApt).map(([id, row]) => [id, {
+      income: Number(row?.shareIncome ?? row?.income ?? 0) || 0,
+      nights: Number(row?.nights || 0) || 0,
+    }])
+  );
 
-  let aShare = 0.5;
-  let zShare = 0.5;
-  if (shareRule === SHARE_RULE.INCOME) {
-    const denom = A.income + Z.income;
-    if (denom > 0) {
-      aShare = A.income / denom;
-      zShare = Z.income / denom;
-    }
-  } else {
-    const denom = A.nights + Z.nights;
-    if (denom > 0) {
-      aShare = A.nights / denom;
-      zShare = Z.nights / denom;
+  for (const expense of shared) {
+    const amount = Number(expense?.amount_eur || 0) || 0;
+    sharedTotal += amount;
+    const allocations = allocateSharedExpense(expense, sharedBasis, shareRule);
+    for (const allocation of allocations) {
+      const id = apartmentId(allocation.apartment);
+      if (!id) continue;
+      ensureRow(incomeByApt, id);
+      sharedAllocations[id] = (sharedAllocations[id] || 0) + Number(allocation.amount_eur || 0);
     }
   }
-
-  const sharedA = sharedTotal * aShare;
-  const sharedZ = sharedTotal - sharedA;
 
   // Existing N behavior remains exactly as before.
   const nComm = useAllocatedItems
@@ -238,8 +246,7 @@ export function computePeriodReport(
     let income = Number(row?.income || 0);
     let expensesForApt = Number(individualTotals[id] || 0);
 
-    if (id === APARTMENTS.A) expensesForApt += sharedA;
-    if (id === APARTMENTS.Z) expensesForApt += sharedZ;
+    expensesForApt += Number(sharedAllocations[id] || 0);
     if (id === APARTMENTS.N) income = nComm;
 
     perApt[id] = {
@@ -256,8 +263,7 @@ export function computePeriodReport(
     aptFilter,
     sharedTotal,
     nComm,
-    sharedA,
-    sharedZ,
+    sharedAllocations,
     individualTotals
   );
 
@@ -265,8 +271,11 @@ export function computePeriodReport(
     perApt: roundedPerApt,
     kpi,
     sharedTotal: round2(sharedTotal),
-    sharedA: round2(sharedA),
-    sharedZ: round2(sharedZ),
+    sharedA: round2(sharedAllocations[APARTMENTS.A] || 0),
+    sharedZ: round2(sharedAllocations[APARTMENTS.Z] || 0),
+    sharedAllocations: Object.fromEntries(
+      Object.entries(sharedAllocations).map(([id, value]) => [id, round2(value)])
+    ),
     aTotal: round2(individualTotals.A || 0),
     zTotal: round2(individualTotals.Z || 0),
     nTotal: round2(individualTotals.N || 0),
@@ -376,8 +385,7 @@ export function computeYearReport(rowsByMonth, opts) {
   const sumPerApt = {};
 
   let sharedTotalYear = 0;
-  let sharedAYear = 0;
-  let sharedZYear = 0;
+  const sharedAllocationsYear = {};
   const individualTotalsYear = {};
 
   for (const m of rowsArr) {
@@ -403,8 +411,9 @@ export function computeYearReport(rowsByMonth, opts) {
     }
 
     sharedTotalYear += Number(rep.sharedTotal || 0);
-    sharedAYear += Number(rep.sharedA || 0);
-    sharedZYear += Number(rep.sharedZ || 0);
+    for (const [id, value] of Object.entries(rep.sharedAllocations || {})) {
+      sharedAllocationsYear[id] = (sharedAllocationsYear[id] || 0) + Number(value || 0);
+    }
     for (const [id, value] of Object.entries(rep.individualTotals || {})) {
       individualTotalsYear[id] = (individualTotalsYear[id] || 0) + Number(value || 0);
     }
@@ -423,8 +432,7 @@ export function computeYearReport(rowsByMonth, opts) {
     opts.aptFilter,
     sharedTotalYear,
     roundedPerApt.N?.income || 0,
-    sharedAYear,
-    sharedZYear,
+    sharedAllocationsYear,
     individualTotalsYear
   );
 
@@ -432,8 +440,11 @@ export function computeYearReport(rowsByMonth, opts) {
     perApt: roundedPerApt,
     kpi,
     sharedTotal: round2(sharedTotalYear),
-    sharedA: round2(sharedAYear),
-    sharedZ: round2(sharedZYear),
+    sharedA: round2(sharedAllocationsYear[APARTMENTS.A] || 0),
+    sharedZ: round2(sharedAllocationsYear[APARTMENTS.Z] || 0),
+    sharedAllocations: Object.fromEntries(
+      Object.entries(sharedAllocationsYear).map(([id, value]) => [id, round2(value)])
+    ),
     individualTotals: Object.fromEntries(
       Object.entries(individualTotalsYear).map(([id, value]) => [id, round2(value)])
     ),

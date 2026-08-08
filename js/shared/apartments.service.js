@@ -228,6 +228,14 @@ export async function shareSetsListAll() {
         .sort((a, b) => (Number(a.sort) || 0) - (Number(b.sort) || 0) || String(a.name || a.id).localeCompare(String(b.name || b.id)));
 }
 
+
+export async function apartmentsListByShareKey(shareKey, { activeOnly = true } = {}) {
+    const key = _trim(shareKey);
+    if (!key) return [];
+    const rows = activeOnly ? await apartmentsListActive() : await apartmentsListAll();
+    return rows.filter((row) => _trim(row?.shareKey) === key);
+}
+
 export async function shareSetsListActive() {
     const rows = await shareSetsListAll();
     return rows.filter((row) => row?.isActive !== false);
