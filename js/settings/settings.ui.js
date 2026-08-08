@@ -56,8 +56,8 @@ export function renderApartmentsTable(tbody, rows, groupMap, handlers) {
         btnToggle.addEventListener("click", () => handlers.onToggleActive(r.id, nextActive));
         actions.appendChild(btnToggle);
 
-        // Delete samo ako je neaktivan i nije core A/Z/N
-        if (!curActive && !["A", "Z", "N"].includes(String(r.id))) {
+        // Delete je dostupan za svaki neaktivan apartman.
+        if (!curActive) {
             const btnDel = document.createElement("button");
             btnDel.className = "btn";
             btnDel.type = "button";

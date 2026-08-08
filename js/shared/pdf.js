@@ -19,7 +19,7 @@ function fmtEur(n) {
 
 export function renderPeriodReportToPrintRoot(
   dto,
-  { title = "Mjesečni izvještaj", aptFilter = "ALL", shareRule = "NIGHTS" } = {}
+  { title = "Mjesečni izvještaj", aptFilter = "ALL", shareRule = "NIGHTS", selectedApartment = null } = {}
 ) {
   const root = document.getElementById("print-root");
   if (!root) throw new Error("Missing #print-root");
@@ -30,7 +30,7 @@ export function renderPeriodReportToPrintRoot(
   const single = isSingle ? (perApt?.[aptFilter] ?? null) : null;
 
   const incomeLabel =
-    (isSingle && aptFilter === "N") ? "Commission (EUR)" : "Income (EUR)";
+    (isSingle && selectedApartment?.ownerType === "MANAGED") ? "Commission (EUR)" : "Income (EUR)";
 
   const showSharedBlock = !isSingle;   // raspodjela A/Z samo u ALL
   const showPerAptTable = !isSingle;  // dinamička tabela apartmana u ALL
@@ -105,8 +105,9 @@ export function renderPeriodReportToPrintRoot(
             ${showSharedBlock ? `
         <div class="print-section-title">Shared raspodjela</div>
         <div class="print-kpi avoid-break">
-          <div class="row"><span class="label">Shared → A (EUR)</span><span class="value">${fmtEur(dto.sharedA)}</span></div>
-          <div class="row"><span class="label">Shared → Z (EUR)</span><span class="value">${fmtEur(dto.sharedZ)}</span></div>
+          ${Object.entries(dto.sharedAllocations || {}).map(([id, value]) => `
+            <div class="row"><span class="label">Shared → ${esc(id)} (EUR)</span><span class="value">${fmtEur(value)}</span></div>
+          `).join("")}
           <div class="row"><span class="label">Shared total (EUR)</span><span class="value">${fmtEur(dto.sharedTotal)}</span></div>
         </div>
       ` : ``}

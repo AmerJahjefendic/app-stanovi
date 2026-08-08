@@ -66,6 +66,7 @@ const PRECACHE_URLS = [
   "./js/shared/pdf.js",
   "./js/shared/reservation-financial.service.js",
   "./js/shared/settings.js",
+  "./js/shared/shopping-scopes.service.js",
   "./js/shared/state.js",
   "./js/shared/stay-allocation.js",
   "./js/shared/ui.js",

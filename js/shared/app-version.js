@@ -9,5 +9,5 @@
  * the same APP_VERSION. A normal new release changes APP_VERSION and may reset
  * APP_SHELL_REVISION to "1".
  */
-globalThis.APPSTANOVI_APP_VERSION = "1.4.0";
-globalThis.APPSTANOVI_APP_SHELL_REVISION = "19";
+globalThis.APPSTANOVI_APP_VERSION = "1.5.0";
+globalThis.APPSTANOVI_APP_SHELL_REVISION = "2";

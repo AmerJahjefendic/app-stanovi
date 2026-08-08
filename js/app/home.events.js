@@ -198,6 +198,7 @@ export function attachEvents(els, handlers) {
           title: `Mjesečni izvještaj – ${getMonthLabel(month)} ${year}`,
           aptFilter: state.aptFilter,
           shareRule: state.shareRule,
+          selectedApartment,
         });
       }
 

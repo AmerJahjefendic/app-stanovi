@@ -10,7 +10,6 @@ import {
   dbGetOneByIndex,
   dbPutOne,
   dbPutMany,
-  shoppingCountToBuy,
   dbDeleteByIndex,
 } from "../db/db.js";
 
@@ -289,8 +288,6 @@ async function render() {
     },
     { aptFilter: state.aptFilter, shareRule: state.shareRule }
   );
-  console.log("Period report dto", JSON.parse(JSON.stringify(report)));
-
   const kpi2 = addAvgFieldsToKpi(report.kpi, 1);
   renderKPIs(kpi2, els);
   renderIncomeTable(els.incomeTable, report.perApt, state.aptFilter);
@@ -327,7 +324,7 @@ async function render() {
     });
   } else {
     const printTitle = `Mjesečni izvještaj – ${monthLabel} ${year}`;
-    renderPeriodReportToPrintRoot(report, { title: printTitle, aptFilter: state.aptFilter, shareRule: state.shareRule });
+    renderPeriodReportToPrintRoot(report, { title: printTitle, aptFilter: state.aptFilter, shareRule: state.shareRule, selectedApartment });
   }
 }
 
@@ -407,14 +404,10 @@ loadSettings();
 // Shopping badges refresh
 async function refreshShoppingBadges() {
   try {
-    const az = await shoppingCountToBuy("AZ");
-    const n = await shoppingCountToBuy("N");
-
-    const elAZ = document.getElementById("shopBadgeAZ");
-    const elN = document.getElementById("shopBadgeN");
-
-    if (elAZ) elAZ.textContent = az;
-    if (elN) elN.textContent = n;
+    const rows = await dbGetAll("shopping_items");
+    const toBuy = rows.filter((row) => row?.status === "TO_BUY").length;
+    const badge = document.getElementById("shopBadge");
+    if (badge) badge.textContent = toBuy;
   } catch (e) {
     console.warn("[shopping] badge error", e);
   }
