@@ -2,8 +2,8 @@
 import { keyFromPeriod, getMonthLabel, periodKeyToYM } from "../shared/utils.js";
 import { showPop, hidePops, setPickerLabel } from "./home.ui.js";
 import { loadPeriodData } from "./home.data.js";
-import { computePeriodReport, computeNOwnerReport } from "../reports/metrics.service.js";
-import { renderPeriodReportToPrintRoot, renderNOwnerReportToPrintRoot, printToPdf } from "../shared/pdf.js";
+import { computePeriodReport, computeOwnerReport } from "../reports/metrics.service.js";
+import { renderPeriodReportToPrintRoot, renderOwnerReportToPrintRoot, printToPdf } from "../shared/pdf.js";
 import { dbGetAll, dbDeleteByIndex } from "../db/db.js";
 import { state } from "../shared/state.js";
 import { setShareRule } from "../shared/settings.js";
@@ -158,10 +158,9 @@ export function attachEvents(els, handlers) {
       const selectedApartment = apartments.find((apartment) => apartment.id === state.aptFilter) || null;
 
       if (selectedApartment?.ownerType === "MANAGED") {
-        const def = { ...selectedApartment, apartment: selectedApartment.id };
-        const core = computeNOwnerReport(
-          { allIncomeItems: data.allIncomeItems, incomeItems: data.incomeItems, nCommission: data.nCommission },
-          { year, month, def }
+        const core = computeOwnerReport(
+          { allIncomeItems: data.allIncomeItems, incomeItems: data.incomeItems },
+          { year, month, apartmentId: selectedApartment.id }
         );
 
         const dto = {
@@ -171,13 +170,14 @@ export function attachEvents(els, handlers) {
             apartmentName: selectedApartment.name || selectedApartment.id,
             apartmentAddress: selectedApartment.address || "",
             ownerName: selectedApartment.ownerName || "",
+            agencyName: "Sarajevo from A to Z",
             agencyPct: selectedApartment.agencyPct,
           },
           rows: core.rows,
           stats: core.stats,
         };
 
-        renderNOwnerReportToPrintRoot(dto, {
+        renderOwnerReportToPrintRoot(dto, {
           title: `Izvještaj za vlasnika – ${getMonthLabel(month)} ${year}`
         });
       } else {

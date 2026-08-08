@@ -1,5 +1,5 @@
 // js/app/home.page.js
-import { renderPeriodReportToPrintRoot, renderNOwnerReportToPrintRoot, printToPdf } from "../shared/pdf.js";
+import { renderPeriodReportToPrintRoot, renderOwnerReportToPrintRoot, printToPdf } from "../shared/pdf.js";
 import { loadCategoryAliases } from "../shared/mappingConfig.js";
 await loadCategoryAliases();
 
@@ -14,11 +14,11 @@ import {
   dbDeleteByIndex,
 } from "../db/db.js";
 
-import { keyFromPeriod, periodKeyToYM } from "../shared/utils.js";
+import { keyFromPeriod, periodKeyToYM, getMonthLabel } from "../shared/utils.js";
 import { importTroskovnikXlsx } from "../shared/importXlsx.js";
 import { periodLabel } from "../shared/parseFilename.js";
-import { computePeriodReport, computeYearReport, computeRangeReport, computeNOwnerReport } from "../reports/metrics.service.js";
-import { APARTMENTS, APT_LIST, LS_KEYS, APARTMENT_DEFS, APT_ROLE } from "../shared/constants.js";
+import { computePeriodReport, computeYearReport, computeRangeReport, computeOwnerReport } from "../reports/metrics.service.js";
+import { LS_KEYS } from "../shared/constants.js";
 import {
   renderKPIs,
   renderIncomeTable,
@@ -37,6 +37,7 @@ import { loadPeriodData } from "./home.data.js";
 import { attachEvents } from "./home.events.js";
 import { exportBackupFile, restoreBackupFileAtomic } from "../backup/backup.service.js";
 import { populateApartmentSelect } from "../shared/apartment-select.js";
+import { apartmentsListActive } from "../shared/apartments.service.js";
 
 const els = {
   mBtnBackup: document.getElementById("mBtnBackup"),
@@ -299,25 +300,32 @@ async function render() {
   renderExpenseTable(els.expenseTable, report, state.aptFilter);
   renderNNote(els.nNote, data.nCommission);
 
-  // Auto-refresh print-root sa trenutnim report podacima
-  const monthNames = ["Januar", "Februar", "Mart", "April", "Maj", "Juni", "Juli", "Avgust", "Septembar", "Oktobar", "Novembar", "Decembar"];
-  const monthLabel = monthNames[month - 1];
+  // Auto-refresh print-root sa trenutnim report podacima.
+  const monthLabel = getMonthLabel(month);
+  const apartments = await apartmentsListActive();
+  const selectedApartment = apartments.find((apartment) => apartment.id === state.aptFilter) || null;
 
-  const def = APARTMENT_DEFS[state.aptFilter];
-
-  if (def?.role === APT_ROLE.OWNER) {
-    const core = computeNOwnerReport(
-      { allIncomeItems: data.allIncomeItems, incomeItems: data.incomeItems, nCommission: data.nCommission },
-      { year, month, def: { ...def, apartment: state.aptFilter } }
+  if (selectedApartment?.ownerType === "MANAGED") {
+    const core = computeOwnerReport(
+      { allIncomeItems: data.allIncomeItems, incomeItems: data.incomeItems },
+      { year, month, apartmentId: selectedApartment.id }
     );
 
     const ownerDto = {
-      meta: { monthLabel, year, ...def.meta },
+      meta: {
+        monthLabel,
+        year,
+        apartmentName: selectedApartment.name || selectedApartment.id,
+        apartmentAddress: selectedApartment.address || "",
+        ownerName: selectedApartment.ownerName || "",
+        agencyName: "Sarajevo from A to Z",
+        agencyPct: selectedApartment.agencyPct,
+      },
       rows: core.rows,
       stats: core.stats,
     };
 
-    renderNOwnerReportToPrintRoot(ownerDto, {
+    renderOwnerReportToPrintRoot(ownerDto, {
       title: `Izvještaj za vlasnika – ${monthLabel} ${year}`,
     });
   } else {

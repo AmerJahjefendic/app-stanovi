@@ -276,12 +276,12 @@ export function computePeriodReport(
   };
 }
 
-// =================== N OWNER REPORT (po rezervacijama) ===================
+// =================== OWNER REPORT (po rezervacijama) ===================
 // PDF sloj NE računa – sve kolone i statistika se pripremaju ovdje.
 
-export function computeNOwnerReport(
-  { allIncomeItems, incomeItems, nCommission },
-  { year, month, def }
+export function computeOwnerReport(
+  { allIncomeItems, incomeItems },
+  { year, month, apartmentId }
 ) {
   // allIncomeItems je potreban kako bi rezervacije koje prelaze granicu mjeseca
   // bile uključene u oba stvarna perioda boravka. incomeItems ostaje samo
@@ -290,7 +290,8 @@ export function computeNOwnerReport(
     ? allIncomeItems
     : (Array.isArray(incomeItems) ? incomeItems : []);
 
-  const aptFilter = def?.apartment || APARTMENTS.N;
+  const aptFilter = String(apartmentId || "").trim();
+  if (!aptFilter) throw new Error("computeOwnerReport: apartmentId is required");
 
   const periodRows = buildIncomePeriodView(sourceItems, {
     year,
@@ -302,7 +303,12 @@ export function computeNOwnerReport(
   const rows0 = periodRows.map((row) => {
     const nights = Number(row?.nights || 0);
     const reportIncome = Number(row?.allocated_split_base_eur || 0);
-    const agencyCommissionEur = Number(row?.allocated_agency_eur || 0);
+    const agencyTotalEur = Number(row?.allocated_agency_eur || 0);
+    const cleaningFeeEur = Number(row?.allocated_cleaning_fee_eur || 0);
+    // Owner Report prikazuje samo proviziju agencije na osnovicu.
+    // Cleaning Fee pripada agenciji, ali je interni podatak i ne ulazi u
+    // vlasničku kolonu "Provizija agencije".
+    const agencyCommissionEur = Math.max(0, agencyTotalEur - cleaningFeeEur);
     const ownerNetEur = Number(row?.allocated_owner_eur || 0);
 
     return {
@@ -341,6 +347,7 @@ export function computeNOwnerReport(
   return {
     year,
     month,
+    apartmentId: aptFilter,
     rows: rows0,
     stats: {
       ownerNetTotalEur,
@@ -351,6 +358,15 @@ export function computeNOwnerReport(
       incomeTotalEur: round2(incomeTotalEur),
     },
   };
+}
+
+// Legacy alias: keep old API available while callers migrate.
+export function computeNOwnerReport(data, { year, month, def } = {}) {
+  return computeOwnerReport(data, {
+    year,
+    month,
+    apartmentId: def?.apartment || APARTMENTS.N,
+  });
 }
 
 // =================== YEAR (kalendarska godina) ===================

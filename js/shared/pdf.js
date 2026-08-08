@@ -139,9 +139,9 @@ function fmtInt(n) {
 }
 
 /**
- * N Owner report – PDF renderer (NE RAČUNA, samo ispisuje DTO)
+ * Owner report – PDF renderer (NE RAČUNA, samo ispisuje DTO)
  */
-export function renderNOwnerReportToPrintRoot(dto, { title } = {}) {
+export function renderOwnerReportToPrintRoot(dto, { title } = {}) {
   const root = document.getElementById("print-root");
   if (!root) throw new Error("Missing #print-root");
 
@@ -155,13 +155,13 @@ export function renderNOwnerReportToPrintRoot(dto, { title } = {}) {
     <div class="print-root">
     <div class="n-header">
       <div class="n-title">${esc(title)}</div>
-      <div class="n-sub">${esc(meta.propertyName ?? "")}</div>
+      <div class="n-sub">${esc(meta.apartmentAddress || meta.apartmentName || meta.propertyName || "")}</div>
     </div>
 
     <div class="n-meta-grid avoid-break">
       <div class="kv"><div class="k">Mjesec:</div><div class="v">${esc(meta.monthLabel ?? "")}</div></div>
       <div class="kv"><div class="k">Godina:</div><div class="v">${esc(meta.year ?? "")}</div></div>
-      <div class="kv"><div class="k">Nekretnina:</div><div class="v">${esc(meta.propertyName ?? "")}</div></div>
+      <div class="kv"><div class="k">Nekretnina:</div><div class="v">${esc(meta.apartmentAddress || meta.apartmentName || meta.propertyName || "")}</div></div>
       <div class="kv"><div class="k">Vlasnik:</div><div class="v">${esc(meta.ownerName ?? "")}</div></div>
       <div class="kv"><div class="k">Agencija:</div><div class="v">${esc(meta.agencyName ?? "")}</div></div>
       <div class="kv"><div class="k"></div><div class="v"></div></div>
@@ -175,7 +175,7 @@ export function renderNOwnerReportToPrintRoot(dto, { title } = {}) {
           <th>Datum odlaska</th>
           <th class="num">Ukupan prihod (EUR)</th>
           <th class="center">Broj noćenja</th>
-          <th class="num">Provizija agencije (25%) (EUR)</th>
+          <th class="num">Provizija agencije (${esc(meta.agencyPct ?? "")}%) (EUR)</th>
           <th class="num">Neto prihod vlasnika (EUR)</th>
           <th class="num">Cijena po noći</th>
         </tr>
@@ -224,3 +224,7 @@ export function renderNOwnerReportToPrintRoot(dto, { title } = {}) {
 export function printToPdf() {
   window.print();
 }
+
+
+// Legacy alias for older callers.
+export const renderNOwnerReportToPrintRoot = renderOwnerReportToPrintRoot;
