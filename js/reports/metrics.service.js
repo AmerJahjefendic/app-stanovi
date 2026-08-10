@@ -8,8 +8,6 @@ import {
 import { buildIncomePeriodView } from "../shared/income-period-view.service.js";
 import { allocateSharedExpense, resolveSharedExpenseMembers } from "../shared/shared-expense-allocation.service.js";
 
-const LEGACY_APARTMENTS = [APARTMENTS.A, APARTMENTS.Z, APARTMENTS.N];
-
 function round2(x) {
   return Math.round((Number(x || 0) + Number.EPSILON) * 100) / 100;
 }
@@ -28,8 +26,8 @@ function collectApartmentIds(...dataSets) {
     ids.push(id);
   };
 
-  // Keep legacy order stable, then append dynamic apartment ids from actual data.
-  LEGACY_APARTMENTS.forEach(add);
+  // Apartment ids come only from actual period/history data.
+  // Legacy A/Z/N rows remain supported naturally when those ids exist in legacy data.
   for (const dataSet of dataSets) {
     for (const row of dataSet || []) {
       add(row?.apartment);
@@ -155,6 +153,11 @@ export function computePeriodReport(
     allocationItemsArr,
     expArr
   );
+  // Preserve the legacy N-only commission compatibility case without
+  // polluting fresh/dynamic databases with phantom A/Z/N rows.
+  if (nCommission && !apartmentIds.includes(APARTMENTS.N)) {
+    apartmentIds.push(APARTMENTS.N);
+  }
   if (aptFilter && aptFilter !== "ALL" && !apartmentIds.includes(aptFilter)) {
     apartmentIds.push(aptFilter);
   }
@@ -369,15 +372,6 @@ export function computeOwnerReport(
   };
 }
 
-// Legacy alias: keep old API available while callers migrate.
-export function computeNOwnerReport(data, { year, month, def } = {}) {
-  return computeOwnerReport(data, {
-    year,
-    month,
-    apartmentId: def?.apartment || APARTMENTS.N,
-  });
-}
-
 // =================== YEAR (kalendarska godina) ===================
 
 export function computeYearReport(rowsByMonth, opts) {
@@ -422,10 +416,6 @@ export function computeYearReport(rowsByMonth, opts) {
   if (opts?.aptFilter && opts.aptFilter !== "ALL" && !sumPerApt[opts.aptFilter]) {
     sumPerApt[opts.aptFilter] = { income: 0, nights: 0, expenses: 0, net: 0 };
   }
-  for (const id of LEGACY_APARTMENTS) {
-    if (!sumPerApt[id]) sumPerApt[id] = { income: 0, nights: 0, expenses: 0, net: 0 };
-  }
-
   const roundedPerApt = roundPerApt(sumPerApt);
   const kpi = buildKpiFromPerApt(
     roundedPerApt,

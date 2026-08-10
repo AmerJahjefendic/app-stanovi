@@ -1,6 +1,15 @@
 // js/shared/apartments.service.js
 import { dbGetAll, dbGetOne, dbPutOne, dbDelete, dbGetByIndex } from "../db/db.js";
 import { cleanStr } from "./utils.js";
+import {
+    APARTMENT_STATUS,
+    apartmentDeleteBlockMessage,
+    filterApartmentsForRegistry,
+    findApartmentReferencesInData,
+    isApartmentActive,
+    normalizeApartmentStatus,
+    withApartmentStatus,
+} from "./apartment-lifecycle.js";
 
 export const OWNER_TYPE = {
     OWNED: "OWNED",
@@ -36,7 +45,12 @@ export async function apartmentsListAll() {
 
 export async function apartmentsListActive() {
     const rows = await apartmentsListAll();
-    return rows.filter(r => r?.isActive !== false);
+    return rows.filter(isApartmentActive);
+}
+
+export async function apartmentsListVisible({ includeArchived = false } = {}) {
+    const rows = await apartmentsListAll();
+    return filterApartmentsForRegistry(rows, { includeArchived });
 }
 
 export async function apartmentsGet(id) {
@@ -130,13 +144,16 @@ export async function validateApartmentInput(input, { allowUpdate = false } = {}
     const sort = (sortRaw === "" || sortRaw === null || sortRaw === undefined) ? null : Number(sortRaw);
     if (sort !== null && !Number.isFinite(sort)) throw new Error("sort mora biti broj ili prazno.");
 
+    const lifecycleStatus = normalizeApartmentStatus(input);
+
     return {
         id,
         name,
         groupId,
         ownerType,
         agencyPct: ownerType === OWNER_TYPE.MANAGED ? agencyPct : null,
-        isActive: input?.isActive !== false,
+        lifecycleStatus,
+        isActive: lifecycleStatus === APARTMENT_STATUS.ACTIVE,
         sort: sort ?? null,
         legacyCode: input?.legacyCode ? _trim(input.legacyCode) : id,
         address: address || "",
@@ -190,6 +207,18 @@ export async function apartmentsUpdate(id, patch) {
     if (!cur) throw new Error(`Apartman "${key}" ne postoji.`);
 
     const merged = { ...cur, ...patch, id: key };
+    // Backward-compatible update semantics: callers that still patch isActive
+    // can move ACTIVE <-> INACTIVE. ARCHIVED is intentionally restored only
+    // through the explicit lifecycle action.
+    if (
+        Object.prototype.hasOwnProperty.call(patch || {}, "isActive")
+        && !Object.prototype.hasOwnProperty.call(patch || {}, "lifecycleStatus")
+        && normalizeApartmentStatus(cur) !== APARTMENT_STATUS.ARCHIVED
+    ) {
+        merged.lifecycleStatus = patch.isActive
+            ? APARTMENT_STATUS.ACTIVE
+            : APARTMENT_STATUS.INACTIVE;
+    }
     const clean = await validateApartmentInput(merged, { allowUpdate: true });
 
     const next = {
@@ -202,13 +231,85 @@ export async function apartmentsUpdate(id, patch) {
     return next;
 }
 
+export async function apartmentsSetStatus(id, status) {
+    const key = _trim(id);
+    if (!key) throw new Error("Nedostaje apartment id.");
+
+    const cur = await apartmentsGet(key);
+    if (!cur) throw new Error(`Apartman "${key}" ne postoji.`);
+
+    const nextStatus = String(status || "").trim().toUpperCase();
+    if (nextStatus === APARTMENT_STATUS.ARCHIVED && isApartmentActive(cur)) {
+        throw new Error("Aktivan apartman prvo deaktiviraj, pa ga tek onda arhiviraj.");
+    }
+
+    const next = withApartmentStatus(cur, nextStatus);
+    next.updatedAt = _now();
+    if (nextStatus === APARTMENT_STATUS.ARCHIVED) {
+        next.archivedAt = cur.archivedAt || _now();
+    } else if (normalizeApartmentStatus(cur) === APARTMENT_STATUS.ARCHIVED) {
+        next.archivedAt = null;
+    }
+
+    await dbPutOne("apartments", next);
+    return next;
+}
+
 export async function apartmentsSetActive(id, isActive) {
-    return apartmentsUpdate(id, { isActive: !!isActive });
+    return apartmentsSetStatus(
+        id,
+        isActive ? APARTMENT_STATUS.ACTIVE : APARTMENT_STATUS.INACTIVE
+    );
+}
+
+export async function apartmentsArchive(id) {
+    return apartmentsSetStatus(id, APARTMENT_STATUS.ARCHIVED);
+}
+
+export async function apartmentsRestore(id) {
+    return apartmentsSetStatus(id, APARTMENT_STATUS.INACTIVE);
+}
+
+export async function apartmentsFindReferences(id) {
+    const key = _trim(id);
+    if (!key) return [];
+
+    const [incomeItems, incomeMonthly, expenses, shoppingItems] = await Promise.all([
+        dbGetAll("income_items"),
+        dbGetAll("income_monthly"),
+        dbGetAll("expenses"),
+        dbGetAll("shopping_items"),
+    ]);
+
+    return findApartmentReferencesInData(key, {
+        income_items: incomeItems,
+        income_monthly: incomeMonthly,
+        expenses,
+        shopping_items: shoppingItems,
+    });
 }
 
 export async function apartmentsDelete(id) {
     const key = _trim(id);
     if (!key) return true;
+
+    const cur = await apartmentsGet(key);
+    if (!cur) return true;
+    if (isApartmentActive(cur)) {
+        throw new Error("Aktivan apartman prvo deaktiviraj prije trajnog brisanja.");
+    }
+
+    const references = await apartmentsFindReferences(key);
+    const blockMessage = apartmentDeleteBlockMessage(key, references);
+    if (blockMessage) throw new Error(blockMessage);
+
+    // Remove apartment-specific configuration only when hard delete is safe.
+    const rules = await dbGetAll("commission_rules");
+    for (const rule of rules) {
+        if (_trim(rule?.apartmentId) === key && rule?.id) {
+            await dbDelete("commission_rules", rule.id);
+        }
+    }
 
     await dbDelete("apartments", key);
     return true;

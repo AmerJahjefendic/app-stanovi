@@ -7,23 +7,22 @@ import {
     calculateAirbnbSplitFeeFromPayout,
     calculateManagedReservation,
 } from "../shared/managed-income-calculator.js";
-import {
-    buildReservationFinancial,
-    buildReservationFinancials,
-    getReservationSegmentForPeriod,
-} from "../shared/reservation-financial.service.js";
+import { buildReservationFinancial } from "../shared/reservation-financial.service.js";
 import {
     buildIncomePeriodView,
     computeIncomePeriodTotals,
 } from "../shared/income-period-view.service.js";
-import { getCommissionConfig, normalizeAirbnbFeeModel } from "../shared/commission-rules.service.js";
+import {
+    getCommissionConfig,
+    normalizeAirbnbFeeModel,
+    resolveConfiguredManagedCleaningFee,
+} from "../shared/commission-rules.service.js";
 import { renderYearCalendar, withLoading } from "../shared/ui.js";
 import { periodLabel } from "../shared/parseFilename.js";
 import { renderIncomeSummary, renderIncomeItemsTable, renderIncomeByApt } from "./income.ui.js";
 import { populateApartmentSelect } from "../shared/apartment-select.js";
 import { apartmentsListAll, OWNER_TYPE } from "../shared/apartments.service.js";
 
-console.log("[income.page.js] loaded", new Date().toISOString());
 window.__incomeLoaded = true;
 
 const els = {
@@ -141,19 +140,18 @@ async function resolveManagedCleaningFeeForWrite({
         return CF_EUR;
     }
 
-    // New MANAGED reservations use the apartment's current Cleaning Fee from Settings.
-    // Settings persists this value through the existing AIRBNB SINGLE_FEE rule.
-    const config = await getCommissionConfig({
+    // New MANAGED reservations resolve platform-specific override first,
+    // then fall back to the apartment Default Cleaning Fee from Settings.
+    const configuredCleaningFee = await resolveConfiguredManagedCleaningFee({
         apartmentId,
-        platform: Platforms.AIRBNB,
-        feeModel: FeeModels.SINGLE_FEE,
+        platform: normalizedPlatform,
+        feeModel: normalizedFeeModel,
     });
 
-    const configuredCleaningFee = Number(config?.cleaningFeeEur);
     if (!Number.isFinite(configuredCleaningFee) || configuredCleaningFee <= 0) {
         throw new Error(
             "Nije podešen validan Cleaning Fee za ovaj MANAGED apartman. " +
-            "Otvorite Settings i unesite Cleaning Fee veći od 0 EUR."
+            "Otvorite Settings i provjerite Default Cleaning Fee / platform override."
         );
     }
 
@@ -359,10 +357,6 @@ function getIncomeItemAllocation(item) {
     }
 }
 
-function getIncomeItemPeriodKeys(item) {
-    return getIncomeItemAllocation(item)?.periodKeys || new Set();
-}
-
 async function ensureIncomeItemAllocationPeriods(item) {
     const allocation = getIncomeItemAllocation(item);
     if (!allocation) return;
@@ -371,48 +365,6 @@ async function ensureIncomeItemAllocationPeriods(item) {
         const [year, month] = key.split("-").map(Number);
         await ensureImportPeriod(year, month);
     }
-}
-
-async function rebuildNCommissionForPeriod(year, month) {
-    const items = await dbGetAll("income_items");
-    const nItems = items.filter(it => it.apartment === "N");
-    const allocations = buildReservationFinancials(nItems, {
-        onError: (item, error) =>
-            console.warn("Income stay allocation skipped", item?.id, error),
-    });
-
-    let incomeNTotal = 0;
-    let bookingFeeTotal = 0;
-    let ownerTotal = 0;
-    let commissionTotal = 0;
-    let lastPlatform = null;
-
-    for (const allocation of allocations) {
-        const segment = getReservationSegmentForPeriod(allocation, year, month);
-        if (!segment) continue;
-
-        incomeNTotal += Number(segment.splitBaseEur || 0) || 0;
-        ownerTotal += Number(segment.ownerIncomeEur || 0) || 0;
-        commissionTotal += Number(segment.agencyCommissionEur || 0) || 0;
-        bookingFeeTotal += Number(segment.platformFeeEur || 0) || 0;
-
-        lastPlatform =
-            String(allocation.reservation?.platform || "").toLowerCase() || lastPlatform;
-    }
-
-    const existing = await dbGetOneByIndex("n_commission", "by_period", [year, month]);
-
-    await dbPutOne("n_commission", {
-        id: existing?.id || `ncomm_${year}_${String(month).padStart(2, "0")}`,
-        year,
-        month,
-        incomeN_eur_total: round2(incomeNTotal),
-        booking_fee_eur: round2(bookingFeeTotal),
-        owner_eur: round2(ownerTotal),
-        commission_eur: round2(commissionTotal),
-        platform: lastPlatform,
-        updated_at: new Date().toISOString(),
-    });
 }
 
 // ---------- ADD ITEM (core logic) ----------
@@ -494,16 +446,7 @@ async function deleteIncomeItem(id) {
     if (!confirmed) return;
 
     try {
-        const affectedPeriods = (item.ownerType === OWNER_TYPE.MANAGED || item.apartment === "N")
-            ? getIncomeItemPeriodKeys(item)
-            : new Set();
-
         await dbDelete("income_items", item.id);
-
-        for (const key of affectedPeriods) {
-            const [year, month] = key.split("-").map(Number);
-            await rebuildNCommissionForPeriod(year, month);
-        }
         await render();
     } catch (e) {
         console.error(e);
@@ -634,7 +577,7 @@ async function handleAddIncomeItem() {
         const eur = Number(els.incAddAmount?.value || 0);
         if (!Number.isFinite(eur) || eur <= 0) return alert("Unesi ispravan iznos (EUR).");
 
-        // ✅ N + Airbnb: Split Fee unos = payout; Single Fee unos = cijena rezervacije bez CF
+        // ✅ MANAGED + Airbnb: Split Fee unos = payout; Single Fee unos = ukupna cijena rezervacije sa CF
         if (platform === Platforms.AIRBNB && isManaged) {
             selectedFeeModel = normalizeAirbnbFeeModel(
                 els.incAddFeeModel?.value
@@ -823,24 +766,6 @@ async function handleAddIncomeItem() {
         await ensureIncomeItemAllocationPeriods(item);
         if (existingItem) {
             await ensureIncomeItemAllocationPeriods(existingItem);
-        }
-
-        // --- N: rebuild all months affected by the old/new stay period ---
-        const affectedPeriods = new Set();
-        if (existingItem?.ownerType === OWNER_TYPE.MANAGED || existingItem?.apartment === "N") {
-            for (const key of getIncomeItemPeriodKeys(existingItem)) {
-                affectedPeriods.add(key);
-            }
-        }
-        if (isManaged) {
-            for (const key of getIncomeItemPeriodKeys(item)) {
-                affectedPeriods.add(key);
-            }
-        }
-
-        for (const key of affectedPeriods) {
-            const [year, month] = key.split("-").map(Number);
-            await rebuildNCommissionForPeriod(year, month);
         }
 
         // Nakon snimanja prikaži mjesec check-ina.

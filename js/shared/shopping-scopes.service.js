@@ -1,5 +1,5 @@
 import { dbGetAll } from "../db/db.js";
-import { apartmentsListActive, shareSetsListActive } from "./apartments.service.js";
+import { apartmentsListActive, apartmentsListAll, shareSetsListActive } from "./apartments.service.js";
 
 const LEGACY_SHARED_KEY = "AZ";
 const LEGACY_APARTMENT_KEY = "N";
@@ -41,8 +41,9 @@ function storageKeyForApartment(apartment) {
  * apartment id can never collide with a shareKey.
  */
 export async function shoppingListActiveScopes({ includeOrphans = true } = {}) {
-  const [apartments, shareSets, shoppingItems] = await Promise.all([
+  const [apartments, allApartments, shareSets, shoppingItems] = await Promise.all([
     apartmentsListActive(),
+    apartmentsListAll(),
     shareSetsListActive(),
     includeOrphans ? dbGetAll("shopping_items") : Promise.resolve([]),
   ]);
@@ -102,9 +103,28 @@ export async function shoppingListActiveScopes({ includeOrphans = true } = {}) {
   // no longer exists in the active registry, keep the list reachable instead
   // of silently hiding the stored data.
   if (includeOrphans) {
-    const usedStorageKeys = new Set(scopes.map((scope) => scope.storageKey));
+    // Inactive/archived apartment scopes are intentionally hidden from the
+    // operational shopping UI. They are still known registry scopes, so their
+    // persisted items must not reappear as misleading "Legacy lista" orphans.
+    const knownStorageKeys = new Set(scopes.map((scope) => scope.storageKey));
+    const allMembersByShareKey = new Map();
+
+    for (const apartment of allApartments) {
+      const shareKey = clean(apartment?.shareKey);
+      if (shareKey) {
+        if (!allMembersByShareKey.has(shareKey)) allMembersByShareKey.set(shareKey, []);
+        allMembersByShareKey.get(shareKey).push(apartment);
+      } else if (clean(apartment?.id)) {
+        knownStorageKeys.add(storageKeyForApartment(apartment));
+      }
+    }
+
+    for (const [shareKey, members] of allMembersByShareKey.entries()) {
+      knownStorageKeys.add(storageKeyForShared(shareKey, members));
+    }
+
     const orphanKeys = [...new Set(shoppingItems.map((row) => clean(row?.group)).filter(Boolean))]
-      .filter((key) => !usedStorageKeys.has(key));
+      .filter((key) => !knownStorageKeys.has(key));
 
     for (const key of orphanKeys) {
       scopes.push({

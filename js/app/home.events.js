@@ -8,7 +8,7 @@ import { dbGetAll, dbDeleteByIndex } from "../db/db.js";
 import { state } from "../shared/state.js";
 import { setShareRule } from "../shared/settings.js";
 import { periodLabel } from "../shared/parseFilename.js";
-import { apartmentsListActive } from "../shared/apartments.service.js";
+import { apartmentsListAll } from "../shared/apartments.service.js";
 
 export function attachEvents(els, handlers) {
   const { render, handleImport, exportBackup, restoreBackupFile } = handlers;
@@ -154,7 +154,7 @@ export function attachEvents(els, handlers) {
       const month = Number(m[2]);
       const data = await loadPeriodData(year, month);
 
-      const apartments = await apartmentsListActive();
+      const apartments = await apartmentsListAll();
       const selectedApartment = apartments.find((apartment) => apartment.id === state.aptFilter) || null;
 
       if (selectedApartment?.ownerType === "MANAGED") {

@@ -36,7 +36,7 @@ import { loadPeriodData } from "./home.data.js";
 import { attachEvents } from "./home.events.js";
 import { exportBackupFile, restoreBackupFileAtomic } from "../backup/backup.service.js";
 import { populateApartmentSelect } from "../shared/apartment-select.js";
-import { apartmentsListActive } from "../shared/apartments.service.js";
+import { apartmentsListAll } from "../shared/apartments.service.js";
 
 const els = {
   mBtnBackup: document.getElementById("mBtnBackup"),
@@ -296,7 +296,7 @@ async function render() {
 
   // Auto-refresh print-root sa trenutnim report podacima.
   const monthLabel = getMonthLabel(month);
-  const apartments = await apartmentsListActive();
+  const apartments = await apartmentsListAll();
   const selectedApartment = apartments.find((apartment) => apartment.id === state.aptFilter) || null;
 
   if (selectedApartment?.ownerType === "MANAGED") {

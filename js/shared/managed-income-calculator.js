@@ -141,8 +141,8 @@ export function calculateAirbnbSplitFee({
  * Calculate AIRBNB reservation using SINGLE_FEE model.
  *
  * @param {Object} [params]
- * @param {number} params.grossAmount Reservation amount without cleaning fee.
- * @param {number} params.cleaningFee Cleaning fee that must be provided.
+ * @param {number} params.grossAmount Total Airbnb reservation amount including cleaning fee.
+ * @param {number} params.cleaningFee Cleaning fee already included in grossAmount.
  * @param {number} [params.agencyShare=0.25] Agency share as decimal.
  * @param {number} [params.ownerShare=0.75] Owner share as decimal.
  * @returns {{platform:string,feeModel:string|null,grossAmount:number,cleaningFee:number,platformFee:number,payoutAmount:number,splitBase:number,ownerAmount:number,agencyAmount:number}}
@@ -155,8 +155,10 @@ export function calculateAirbnbSingleFee({
 } = {}) {
   const gross = assertPositive(grossAmount, "Airbnb iznos rezervacije");
   const cleaning = assertPositive(cleaningFee, "Cleaning fee za Single Fee");
-  const platformFee = (gross + cleaning) * AIRBNB_SINGLE_FEE_RATE;
-  const payoutAmount = gross + cleaning - platformFee;
+  // SINGLE_FEE input is the total Airbnb reservation amount, already including CF.
+  // Airbnb charges its host fee on that full total; CF is then removed before split.
+  const platformFee = gross * AIRBNB_SINGLE_FEE_RATE;
+  const payoutAmount = gross - platformFee;
   const splitBase = payoutAmount - cleaning;
 
   return buildResult({

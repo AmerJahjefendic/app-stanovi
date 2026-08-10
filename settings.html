@@ -69,8 +69,12 @@
 
                 <div id="msgBox" class="msg" style="display:none;"></div>
 
-                <div class="row" style="gap:10px; align-items:center; margin:10px 0;">
+                <div class="row" style="gap:10px; align-items:center; margin:10px 0; flex-wrap:wrap;">
                     <button id="btnOpenAptModal" class="btn">+ Dodaj apartman</button>
+                    <label style="display:flex; gap:8px; align-items:center; margin:0;">
+                        <input id="showArchivedApartments" type="checkbox" />
+                        Prikaži arhivirane
+                    </label>
                 </div>
 
                 <div class="tableWrap">
@@ -83,7 +87,7 @@
                                 <th>Adresa</th>
                                 <th>Vlasnik</th>
                                 <th>Agencijska provizija</th>
-                                <th>Aktivan</th>
+                                <th>Status</th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -160,24 +164,44 @@
                         <div
                             id="airbnbSettingsRow"
                             class="field"
-                            style="flex:1; min-width:220px;"
+                            style="flex:1 1 100%; min-width:220px;"
                         >
-                            <label for="aptCleaningFee">
-                                Airbnb Cleaning Fee (EUR)
-                            </label>
-
+                            <label for="aptCleaningFee">Default Cleaning Fee (EUR)</label>
                             <input
                                 id="aptCleaningFee"
                                 type="number"
                                 step="0.01"
                                 min="0.01"
                                 inputmode="decimal"
-                                placeholder="npr. 15"
+                                placeholder="npr. 10"
                             />
-
                             <small>
-                                Koristi se samo za Airbnb Single Fee. Split Fee uvijek koristi fiksnih 10 €.
+                                Koristi se za nove MANAGED rezervacije kada platforma nema poseban override.
+                                Airbnb Split Fee ostaje zaključan na legacy 10 €.
                             </small>
+
+                            <div class="row" style="gap:10px; margin-top:10px; flex-wrap:wrap;">
+                                <div class="field" style="flex:1; min-width:180px;">
+                                    <label for="aptCleaningFeeAirbnb">Airbnb Single Fee override</label>
+                                    <input id="aptCleaningFeeAirbnb" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="prazno = default" />
+                                </div>
+                                <div class="field" style="flex:1; min-width:180px;">
+                                    <label for="aptCleaningFeeBooking">Booking override</label>
+                                    <input id="aptCleaningFeeBooking" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="prazno = default" />
+                                </div>
+                                <div class="field" style="flex:1; min-width:180px;">
+                                    <label for="aptCleaningFeeVrbo">VRBO override</label>
+                                    <input id="aptCleaningFeeVrbo" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="prazno = default" />
+                                </div>
+                                <div class="field" style="flex:1; min-width:180px;">
+                                    <label for="aptCleaningFeeDirect">Direct override</label>
+                                    <input id="aptCleaningFeeDirect" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="prazno = default" />
+                                </div>
+                                <div class="field" style="flex:1; min-width:180px;">
+                                    <label for="aptCleaningFeeOther">Other override</label>
+                                    <input id="aptCleaningFeeOther" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="prazno = default" />
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -218,12 +242,12 @@
             <div class="modalBody">
                 <div class="field">
                     <label>Naziv</label>
-                    <input id="shareSetName" type="text" placeholder="npr. Gajev trg 2" />
+                    <input id="shareSetName" type="text" placeholder="npr. Apartman Centar" />
                 </div>
 
                 <div class="field">
                     <label>Adresa</label>
-                    <input id="shareSetAddress" type="text" placeholder="npr. Gajev trg 2, Sarajevo" />
+                    <input id="shareSetAddress" type="text" placeholder="npr. Ulica 1, Sarajevo" />
                 </div>
             </div>
 

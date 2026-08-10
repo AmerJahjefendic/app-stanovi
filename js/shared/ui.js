@@ -110,10 +110,14 @@ export function renderExpenseTable(root, report, aptFilter) {
 }
 
 export function renderNNote(root, nCommission) {
+  if (!root) return;
+  const box = root.closest?.(".box") || null;
   if (!nCommission) {
-    root.textContent = "Nema podatka za N proviziju.";
+    root.textContent = "";
+    if (box) box.hidden = true;
     return;
   }
+  if (box) box.hidden = false;
   const incomeTotal = Number(nCommission?.incomeN_eur_total);
   const commission = Number(nCommission?.commission_eur);
   const incomeStr = Number.isFinite(incomeTotal) ? incomeTotal.toFixed(2) : "—";

@@ -1,5 +1,7 @@
 // js/settings/settings.ui.js
 
+import { APARTMENT_STATUS, normalizeApartmentStatus } from "../shared/apartment-lifecycle.js";
+
 export function setMsg(box, type, text) {
     if (!box) return;
     box.style.display = text ? "block" : "none";
@@ -26,6 +28,12 @@ export function renderApartmentsTable(tbody, rows, groupMap, handlers) {
 
         const gid = r.groupId || "";
         const groupLabel = groupMap?.[gid] || gid;
+        const status = normalizeApartmentStatus(r);
+        const statusLabel = status === APARTMENT_STATUS.ACTIVE
+            ? "Aktivan"
+            : status === APARTMENT_STATUS.ARCHIVED
+                ? "Arhiviran"
+                : "Neaktivan";
 
         tr.innerHTML = `
             <td>${escapeHtml(groupLabel)}</td>
@@ -34,7 +42,7 @@ export function renderApartmentsTable(tbody, rows, groupMap, handlers) {
             <td>${escapeHtml(r.address || "")}</td>
             <td>${escapeHtml(r.ownerName || "")}</td>
             <td>${r.agencyPct === null || r.agencyPct === undefined ? "" : Number(r.agencyPct)}</td>
-            <td>${r.isActive === false ? "Ne" : "Da"}</td>
+            <td>${escapeHtml(statusLabel)}</td>
             <td class="rowActions"></td>
         `;
 
@@ -47,23 +55,41 @@ export function renderApartmentsTable(tbody, rows, groupMap, handlers) {
         btnEdit.addEventListener("click", () => handlers.onEdit(r.id));
         actions.appendChild(btnEdit);
 
-        const btnToggle = document.createElement("button");
-        btnToggle.className = "btn";
-        btnToggle.type = "button";
-        const curActive = (r.isActive !== false);
-        const nextActive = !curActive;
-        btnToggle.textContent = curActive ? "Deactivate" : "Activate";
-        btnToggle.addEventListener("click", () => handlers.onToggleActive(r.id, nextActive));
-        actions.appendChild(btnToggle);
+        if (status === APARTMENT_STATUS.ACTIVE) {
+            const btnDeactivate = document.createElement("button");
+            btnDeactivate.className = "btn";
+            btnDeactivate.type = "button";
+            btnDeactivate.textContent = "Deactivate";
+            btnDeactivate.addEventListener("click", () => handlers.onToggleActive(r.id, false));
+            actions.appendChild(btnDeactivate);
+        } else if (status === APARTMENT_STATUS.INACTIVE) {
+            const btnActivate = document.createElement("button");
+            btnActivate.className = "btn";
+            btnActivate.type = "button";
+            btnActivate.textContent = "Activate";
+            btnActivate.addEventListener("click", () => handlers.onToggleActive(r.id, true));
+            actions.appendChild(btnActivate);
 
-        // Delete je dostupan za svaki neaktivan apartman.
-        if (!curActive) {
+            const btnArchive = document.createElement("button");
+            btnArchive.className = "btn";
+            btnArchive.type = "button";
+            btnArchive.textContent = "Archive";
+            btnArchive.addEventListener("click", () => handlers.onArchive(r.id));
+            actions.appendChild(btnArchive);
+
             const btnDel = document.createElement("button");
             btnDel.className = "btn";
             btnDel.type = "button";
             btnDel.textContent = "Delete";
             btnDel.addEventListener("click", () => handlers.onDelete(r.id));
             actions.appendChild(btnDel);
+        } else {
+            const btnRestore = document.createElement("button");
+            btnRestore.className = "btn";
+            btnRestore.type = "button";
+            btnRestore.textContent = "Restore";
+            btnRestore.addEventListener("click", () => handlers.onRestore(r.id));
+            actions.appendChild(btnRestore);
         }
 
         tbody.appendChild(tr);

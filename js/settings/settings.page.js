@@ -1,10 +1,12 @@
 // js/settings/settings.page.js
 import {
-    apartmentsListAll,
+    apartmentsListVisible,
     apartmentsGet,
     apartmentsCreate,
     apartmentsUpdate,
     apartmentsSetActive,
+    apartmentsArchive,
+    apartmentsRestore,
     apartmentsDelete,
     groupsListAll,
     shareSetsCreate,
@@ -13,17 +15,17 @@ import {
 } from "../shared/apartments.service.js";
 
 import {
-    getCommissionConfig,
-    saveAirbnbSingleFeeRule,
+    DEFAULT_MANAGED_CLEANING_FEE_EUR,
+    getManagedCleaningFeeSettings,
+    saveManagedCleaningFeeSettings,
 } from "../shared/commission-rules.service.js";
 
 import {
     GROUP_IDS,
     ALLOWED_NEW_GROUPS,
-    FeeModels,
-    Platforms,
 } from "../shared/constants.js";
 import { cleanStr } from "../shared/utils.js";
+import { APARTMENT_STATUS, normalizeApartmentStatus } from "../shared/apartment-lifecycle.js";
 
 import { dbGetAll } from "../db/db.js";
 
@@ -37,6 +39,7 @@ const els = {
 
   // open modal
   btnOpen: document.getElementById("btnOpenAptModal"),
+  showArchived: document.getElementById("showArchivedApartments"),
 
   // modal
   modal: document.getElementById("aptModal"),
@@ -57,6 +60,11 @@ const els = {
   agencyRow: document.getElementById("agencyRow"),
   airbnbSettingsRow: document.getElementById("airbnbSettingsRow"),
   cleaningFee: document.getElementById("aptCleaningFee"),
+  cleaningFeeAirbnb: document.getElementById("aptCleaningFeeAirbnb"),
+  cleaningFeeBooking: document.getElementById("aptCleaningFeeBooking"),
+  cleaningFeeVrbo: document.getElementById("aptCleaningFeeVrbo"),
+  cleaningFeeDirect: document.getElementById("aptCleaningFeeDirect"),
+  cleaningFeeOther: document.getElementById("aptCleaningFeeOther"),
 
   shareSetWrap: document.getElementById("shareSetWrap"),
   shareKey: document.getElementById("aptShareKey"),
@@ -256,11 +264,18 @@ function resetForm() {
 
     els.aptOwnerType.value = OWNER_TYPE.OWNED;
     els.agencyPct.value = "";
-    if (els.cleaningFee) els.cleaningFee.value = "";
+    if (els.cleaningFee) els.cleaningFee.value = String(DEFAULT_MANAGED_CLEANING_FEE_EUR);
+    if (els.cleaningFeeAirbnb) els.cleaningFeeAirbnb.value = "";
+    if (els.cleaningFeeBooking) els.cleaningFeeBooking.value = "";
+    if (els.cleaningFeeVrbo) els.cleaningFeeVrbo.value = "";
+    if (els.cleaningFeeDirect) els.cleaningFeeDirect.value = "";
+    if (els.cleaningFeeOther) els.cleaningFeeOther.value = "";
     if (els.ownerName) els.ownerName.value = "";
 
     els.sort.value = "";
     els.isActive.checked = true;
+    els.isActive.disabled = false;
+    els.isActive.title = "";
 
     rebuildAptGroupOptions("O");
 
@@ -391,10 +406,14 @@ async function load() {
 }
 
 async function refreshTable() {
-    const rows = await apartmentsListAll();
+    const rows = await apartmentsListVisible({
+        includeArchived: !!els.showArchived?.checked,
+    });
     renderApartmentsTable(els.tbody, rows, _groupMap, {
         onEdit: handleEdit,
         onToggleActive: handleToggleActive,
+        onArchive: handleArchive,
+        onRestore: handleRestore,
         onDelete: handleDelete,
     });
 }
@@ -421,13 +440,11 @@ async function handleEdit(id) {
         const row = await apartmentsGet(id);
         if (!row) return setMsg(els.msgBox, "warn", `Apartman "${id}" ne postoji.`);
 
-        let singleFeeConfig = null;
+        let cleaningFeeSettings = null;
 
         if (isManagedOwnerType(row.ownerType)) {
-            singleFeeConfig = await getCommissionConfig({
+            cleaningFeeSettings = await getManagedCleaningFeeSettings({
                 apartmentId: row.id,
-                platform: Platforms.AIRBNB,
-                feeModel: FeeModels.SINGLE_FEE,
             });
         }
 
@@ -453,18 +470,36 @@ async function handleEdit(id) {
                 : String(row.agencyPct);
 
         if (els.cleaningFee) {
-            els.cleaningFee.value =
-                singleFeeConfig?.cleaningFeeEur === null ||
-                singleFeeConfig?.cleaningFeeEur === undefined
-                    ? ""
-                    : String(singleFeeConfig.cleaningFeeEur);
+            els.cleaningFee.value = String(
+                cleaningFeeSettings?.defaultCleaningFeeEur ?? DEFAULT_MANAGED_CLEANING_FEE_EUR
+            );
+        }
+        if (els.cleaningFeeAirbnb) {
+            els.cleaningFeeAirbnb.value = cleaningFeeSettings?.overrides?.airbnbSingleFee ?? "";
+        }
+        if (els.cleaningFeeBooking) {
+            els.cleaningFeeBooking.value = cleaningFeeSettings?.overrides?.booking ?? "";
+        }
+        if (els.cleaningFeeVrbo) {
+            els.cleaningFeeVrbo.value = cleaningFeeSettings?.overrides?.vrbo ?? "";
+        }
+        if (els.cleaningFeeDirect) {
+            els.cleaningFeeDirect.value = cleaningFeeSettings?.overrides?.direct ?? "";
+        }
+        if (els.cleaningFeeOther) {
+            els.cleaningFeeOther.value = cleaningFeeSettings?.overrides?.other ?? "";
         }
 
         els.sort.value =
             row.sort === null || row.sort === undefined
                 ? ""
                 : String(row.sort);
-        els.isActive.checked = row.isActive !== false;
+        const lifecycleStatus = normalizeApartmentStatus(row);
+        els.isActive.checked = lifecycleStatus === APARTMENT_STATUS.ACTIVE;
+        els.isActive.disabled = lifecycleStatus === APARTMENT_STATUS.ARCHIVED;
+        els.isActive.title = lifecycleStatus === APARTMENT_STATUS.ARCHIVED
+            ? "Arhivirani apartman prvo vrati iz arhive kroz Restore."
+            : "";
         if (els.ownerName) els.ownerName.value = row.ownerName || "";
         
         // Render dropdown with current shareKey
@@ -496,10 +531,36 @@ async function handleToggleActive(id, nextActive) {
     }
 }
 
+async function handleArchive(id) {
+    try {
+        setMsg(els.msgBox, "", "");
+        if (!confirm(`Arhivirati apartman "${id}"? Istorijski podaci ostaju sačuvani i dostupni u izvještajima.`)) return;
+
+        await apartmentsArchive(id);
+        await refreshTable();
+        setMsg(els.msgBox, "ok", `Apartman "${id}" arhiviran.`);
+    } catch (e) {
+        console.error(e);
+        setMsg(els.msgBox, "err", e.message || "Greška pri arhiviranju.");
+    }
+}
+
+async function handleRestore(id) {
+    try {
+        setMsg(els.msgBox, "", "");
+        await apartmentsRestore(id);
+        await refreshTable();
+        setMsg(els.msgBox, "ok", `Apartman "${id}" vraćen iz arhive kao neaktivan.`);
+    } catch (e) {
+        console.error(e);
+        setMsg(els.msgBox, "err", e.message || "Greška pri vraćanju iz arhive.");
+    }
+}
+
 async function handleDelete(id) {
     try {
         setMsg(els.msgBox, "", "");
-        if (!confirm(`Obrisati apartman "${id}"? Ovo se ne može vratiti.`)) return;
+        if (!confirm(`Trajno obrisati apartman "${id}"? Brisanje je dozvoljeno samo ako nema istorijskih podataka.`)) return;
 
         await apartmentsDelete(id);
         await refreshTable();
@@ -542,9 +603,29 @@ async function handleSaveClick() {
             (!Number.isFinite(cleaningFeeEur) || cleaningFeeEur <= 0)
         ) {
             throw new Error(
-                "Za MANAGED apartman moraš unijeti Airbnb Cleaning Fee veći od 0 EUR."
+                "Za MANAGED apartman moraš unijeti Default Cleaning Fee veći od 0 EUR."
             );
         }
+
+        const optionalOverride = (el, label) => {
+            const raw = String(el?.value ?? "").trim();
+            if (!raw) return null;
+            const value = Number(raw);
+            if (!Number.isFinite(value) || value <= 0) {
+                throw new Error(`${label} mora biti broj veći od 0 EUR ili ostavljen prazan.`);
+            }
+            return value;
+        };
+
+        const cleaningFeeOverrides = managed
+            ? {
+                airbnbSingleFee: optionalOverride(els.cleaningFeeAirbnb, "Airbnb Single Fee override"),
+                booking: optionalOverride(els.cleaningFeeBooking, "Booking override"),
+                vrbo: optionalOverride(els.cleaningFeeVrbo, "VRBO override"),
+                direct: optionalOverride(els.cleaningFeeDirect, "Direct override"),
+                other: optionalOverride(els.cleaningFeeOther, "Other override"),
+            }
+            : {};
 
         if (mode === "create") {
             await apartmentsCreate(payload);
@@ -553,9 +634,10 @@ async function handleSaveClick() {
         }
 
         if (managed) {
-            await saveAirbnbSingleFeeRule({
+            await saveManagedCleaningFeeSettings({
                 apartmentId: payload.id,
-                cleaningFeeEur,
+                defaultCleaningFeeEur: cleaningFeeEur,
+                overrides: cleaningFeeOverrides,
             });
         }
 
@@ -640,6 +722,7 @@ els.aptGroup?.addEventListener("change", () => {
 });
 
 els.btnOpen.addEventListener("click", handleOpenCreate);
+els.showArchived?.addEventListener("change", refreshTable);
 els.btnSave.addEventListener("click", handleSaveClick);
 els.btnNewShareSet.addEventListener("click", openShareModal);
 els.btnSaveShareSet.addEventListener("click", handleSaveShareSet);
