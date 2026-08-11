@@ -222,7 +222,34 @@ export function renderOwnerReportToPrintRoot(dto, { title } = {}) {
 
 }
 
-export function printToPdf() {
+async function waitForPrintImages(root = document.getElementById("print-root")) {
+  if (!root) return;
+
+  const images = [...root.querySelectorAll("img")];
+  if (!images.length) return;
+
+  await Promise.all(images.map(async (img) => {
+    if (img.complete && img.naturalWidth > 0) {
+      try { await img.decode?.(); } catch {}
+      return;
+    }
+
+    await new Promise((resolve) => {
+      const done = () => resolve();
+      img.addEventListener("load", done, { once: true });
+      img.addEventListener("error", done, { once: true });
+    });
+
+    try { await img.decode?.(); } catch {}
+  }));
+}
+
+export async function printToPdf() {
+  const root = document.getElementById("print-root");
+  await waitForPrintImages(root);
+
+  // Give layout one frame after decoded print assets are available.
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   window.print();
 }
 

@@ -27,8 +27,7 @@ import {
   renderYearCalendar,
   setLoading,
   showError,
-  withLoading,
-  initMobileMenu
+  withLoading
 } from "../shared/ui.js";
 import { getShareRule, setShareRule } from "../shared/settings.js";
 
@@ -38,6 +37,7 @@ import { attachEvents } from "./home.events.js";
 import { exportBackupFile, restoreBackupFileAtomic } from "../backup/backup.service.js";
 import { populateApartmentSelect } from "../shared/apartment-select.js";
 import { apartmentsListAll } from "../shared/apartments.service.js";
+import { loadReportContext, saveReportContext } from "./report-context.js";
 
 const els = {
   mBtnBackup: document.getElementById("mBtnBackup"),
@@ -397,7 +397,25 @@ async function restoreBackupFile(file) {
 }
 
 await populateApartmentSelect(els.aptFilter, { includeAll: true, allLabel: "Svi" });
+
+const savedReportContext = loadReportContext();
+if (savedReportContext?.aptFilter && els.aptFilter) {
+  const hasSavedApartment = [...els.aptFilter.options].some((option) => option.value === savedReportContext.aptFilter);
+  if (hasSavedApartment) els.aptFilter.value = savedReportContext.aptFilter;
+}
 state.aptFilter = els.aptFilter?.value || "ALL";
+
+if (savedReportContext?.selectedPeriodKey) {
+  const match = savedReportContext.selectedPeriodKey.match(/^(\d{4})-(\d{2})$/);
+  if (match) {
+    state.selectedCalendarYear = Number(match[1]);
+    state.selectedPeriodKey = savedReportContext.selectedPeriodKey;
+    state.isYearView = false;
+    state.isRangeView = false;
+  }
+}
+
+saveReportContext({ selectedPeriodKey: state.selectedPeriodKey, aptFilter: state.aptFilter });
 
 attachEvents(els, { render, handleImport, exportBackup, restoreBackupFile });
 loadSettings();
@@ -423,8 +441,20 @@ window.addEventListener("storage", (e) => {
   }
 });
 
+function runLaunchActionFromHash() {
+  const action = String(window.location.hash || "").replace(/^#/, "");
+  if (!action.startsWith("open-")) return;
+
+  // Clear the command first so refresh/back never repeats a destructive action.
+  history.replaceState(null, "", `${location.pathname}${location.search}`);
+
+  if (action === "open-import") els.fileInput?.click();
+  if (action === "open-restore") els.backupInput?.click();
+  if (action === "open-backup") els.btnBackup?.click();
+  if (action === "open-print") els.btnPrint?.click();
+}
+
 withLoading(async () => {
   await render();
   await refreshShoppingBadges();
-  initMobileMenu();
-});
+}).then(runLaunchActionFromHash);

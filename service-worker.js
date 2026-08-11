@@ -22,6 +22,7 @@ const PRECACHE_URLS = [
   "./expenses.html",
   "./settings.html",
   "./shopping.html",
+  "./more.html",
 
   "./css/app.css",
   "./css/print.css",
@@ -44,6 +45,10 @@ const PRECACHE_URLS = [
   "./js/app/home.data.js",
   "./js/app/home.events.js",
   "./js/app/home.page.js",
+  "./js/app/more.page.js",
+  "./js/app/more-menu.js",
+  "./js/app/report-print.action.js",
+  "./js/app/report-context.js",
   "./js/app/home.ui.js",
   "./js/db/db.js",
   "./js/expenses/expenses.page.js",

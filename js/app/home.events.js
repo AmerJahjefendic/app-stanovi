@@ -1,14 +1,14 @@
 // js/app/home.events.js
-import { keyFromPeriod, getMonthLabel, periodKeyToYM } from "../shared/utils.js";
+import { keyFromPeriod, periodKeyToYM } from "../shared/utils.js";
 import { showPop, hidePops, setPickerLabel } from "./home.ui.js";
 import { loadPeriodData } from "./home.data.js";
-import { computePeriodReport, computeOwnerReport } from "../reports/metrics.service.js";
-import { renderPeriodReportToPrintRoot, renderOwnerReportToPrintRoot, printToPdf } from "../shared/pdf.js";
 import { dbGetAll, dbDeleteByIndex } from "../db/db.js";
 import { state } from "../shared/state.js";
 import { setShareRule } from "../shared/settings.js";
 import { periodLabel } from "../shared/parseFilename.js";
-import { apartmentsListAll } from "../shared/apartments.service.js";
+import { printMonthlyReport } from "./report-print.action.js";
+import { saveReportContext } from "./report-context.js";
+import { apartmentsListAll } from "../shared/apartments.service.js"; // regression guard: owner metadata source remains full registry
 
 export function attachEvents(els, handlers) {
   const { render, handleImport, exportBackup, restoreBackupFile } = handlers;
@@ -108,6 +108,7 @@ export function attachEvents(els, handlers) {
   // Filters
   els.aptFilter?.addEventListener("change", async () => {
     state.aptFilter = els.aptFilter.value;
+    saveReportContext({ selectedPeriodKey: state.selectedPeriodKey, aptFilter: state.aptFilter });
     await render();
   });
 
@@ -141,68 +142,18 @@ export function attachEvents(els, handlers) {
     state.isRangeView = false;
     state.isYearView = false;
     state.selectedPeriodKey = keyFromPeriod(state.selectedCalendarYear, month);
+    saveReportContext({ selectedPeriodKey: state.selectedPeriodKey, aptFilter: state.aptFilter });
     await render();
   });
 
   // Print
   els.btnPrint?.addEventListener("click", async () => {
     try {
-      const m = String(state.selectedPeriodKey || "").match(/^(\d{4})-(\d{2})$/);
-      if (!m) throw new Error("Nije odabran mjesec. Klikni prvo na mjesec u kalendaru.");
-
-      const year = Number(m[1]);
-      const month = Number(m[2]);
-      const data = await loadPeriodData(year, month);
-
-      const apartments = await apartmentsListAll();
-      const selectedApartment = apartments.find((apartment) => apartment.id === state.aptFilter) || null;
-
-      if (selectedApartment?.ownerType === "MANAGED") {
-        const core = computeOwnerReport(
-          { allIncomeItems: data.allIncomeItems, incomeItems: data.incomeItems },
-          { year, month, apartmentId: selectedApartment.id }
-        );
-
-        const dto = {
-          meta: {
-            monthLabel: getMonthLabel(month),
-            year,
-            apartmentName: selectedApartment.name || selectedApartment.id,
-            apartmentAddress: selectedApartment.address || "",
-            ownerName: selectedApartment.ownerName || "",
-            agencyName: "Sarajevo from A to Z",
-            agencyPct: selectedApartment.agencyPct,
-          },
-          rows: core.rows,
-          stats: core.stats,
-        };
-
-        renderOwnerReportToPrintRoot(dto, {
-          title: `Izvještaj za vlasnika – ${getMonthLabel(month)} ${year}`
-        });
-      } else {
-        const report = computePeriodReport(
-          {
-            incomeMonthly: data.incomeMonthly,
-            incomeItems: data.incomeItems,
-            allIncomeItems: data.allIncomeItems,
-            expenses: data.expenses,
-            nCommission: data.nCommission,
-            year,
-            month,
-          },
-          { aptFilter: state.aptFilter, shareRule: state.shareRule, apartments }
-        );
-
-        renderPeriodReportToPrintRoot(report, {
-          title: `Mjesečni izvještaj – ${getMonthLabel(month)} ${year}`,
-          aptFilter: state.aptFilter,
-          shareRule: state.shareRule,
-          selectedApartment,
-        });
-      }
-
-      printToPdf();
+      await printMonthlyReport({
+        selectedPeriodKey: state.selectedPeriodKey,
+        aptFilter: state.aptFilter,
+        shareRule: state.shareRule,
+      });
     } catch (err) {
       console.error(err);
       alert(err?.message || "Greška prilikom pripreme PDF-a.");

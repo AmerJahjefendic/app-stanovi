@@ -98,12 +98,20 @@
 
 .n-stats { width: 55%; } /* kao u Excelu – manja tabela */
 
-/* ===== Signature & Stamp (donji desni kut) ===== */
+/* ===== Signature & Stamp (donji desni kut) =====
+   Positioned independently from document flow so it cannot create a blank
+   second print page when browser header/footer reduces printable height. */
+.print-root {
+  position: relative;
+}
+
 .signature-section {
-  margin-top: 10px;
-  margin-right: 80px;
-  display: flex;
-  justify-content: flex-end;
+  position: absolute;
+  right: 80px;
+  bottom: 0;
+  width: 180px;
+  height: 120px;
+  margin: 0;
 }
 
 .signature-wrapper {
