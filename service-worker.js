@@ -27,12 +27,12 @@ const PRECACHE_URLS = [
   "./css/print.css",
 
   "./manifest.webmanifest",
-  "./assets/icons/appstanovi-48.png",
-  "./assets/icons/appstanovi-180.png",
-  "./assets/icons/appstanovi-192.png",
-  "./assets/icons/appstanovi-512.png",
-  "./assets/icons/appstanovi-maskable-192.png",
-  "./assets/icons/appstanovi-maskable-512.png",
+  "./assets/icons/appstanovi-v2-48.png",
+  "./assets/icons/appstanovi-v2-180.png",
+  "./assets/icons/appstanovi-v2-192.png",
+  "./assets/icons/appstanovi-v2-512.png",
+  "./assets/icons/appstanovi-v2-maskable-192.png",
+  "./assets/icons/appstanovi-v2-maskable-512.png",
   "./assets/signature.png",
   "./assets/stamp.png",
 
