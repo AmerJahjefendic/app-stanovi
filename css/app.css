@@ -5,6 +5,24 @@
   --text: #eaf0ff;
   --muted: #aab6d6;
   --border: #1f2f52;
+
+  /* Accent: warm copper, nod to Baščaršija's kazandžiluk (coppersmith) craft —
+     replaces the generic SaaS blue that carried no tie to the business. */
+  --accent: #cd7f32;
+  --accent-strong: #e0954a;
+  --accent-contrast: #1a1006;
+
+  /* Semantic financial states — used on the numbers themselves, not just badges. */
+  --positive: #7fbf8f;
+  --negative: #e0645a;
+  --warning: #e0a83c;
+  --danger: #dc2626;
+  --danger-strong: #b91c1c;
+
+  /* Consolidated radius scale — replaces 6/8/10/12/14/18px scattered ad hoc. */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-pill: 999px;
 }
 
 * {
@@ -37,7 +55,19 @@ body {
 }
 
 .logo {
-  font-size: 22px;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo img {
+  width: 34px;
+  height: 34px;
+  display: block;
+  object-fit: contain;
 }
 
 .title {
@@ -57,17 +87,17 @@ body {
 }
 
 .btn {
-  background: #2b69ff;
-  color: white;
+  background: var(--accent);
+  color: var(--accent-contrast);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   padding: 10px 12px;
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .btn.secondary {
-  background: #1b2a4b;
+  background: #162238;
   border: 1px solid var(--border);
   color: var(--text);
 }
@@ -129,7 +159,7 @@ h3 {
 }
 
 .listItem.active {
-  outline: 2px solid rgba(43, 105, 255, .6);
+  outline: 2px solid rgba(205, 127, 50, .6);
 }
 
 .listItem small {
@@ -152,10 +182,10 @@ select {
 }
 
 .status {
-  background: rgba(43, 105, 255, .12);
-  border: 1px solid rgba(43, 105, 255, .3);
+  background: rgba(205, 127, 50, .10);
+  border: 1px solid rgba(205, 127, 50, .28);
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   margin-bottom: 12px;
   color: var(--muted);
 }
@@ -170,8 +200,18 @@ select {
 .card {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   padding: 12px;
+}
+
+/* The one number that matters most at a glance — everything else recedes around it. */
+.card.cardPrimary {
+  background: linear-gradient(160deg, rgba(205, 127, 50, .14), var(--card) 65%);
+  border-color: rgba(205, 127, 50, .35);
+}
+
+.card.cardPrimary .cardValue {
+  font-size: 30px;
 }
 
 .cardLabel {
@@ -180,10 +220,15 @@ select {
 }
 
 .cardValue {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 800;
   margin-top: 6px;
+  font-variant-numeric: tabular-nums;
 }
+
+.cardValue.positive { color: var(--positive); }
+.cardValue.negative { color: var(--negative); }
+.cardValue.warning { color: var(--warning); }
 
 .grid2 {
   display: grid;
@@ -341,7 +386,7 @@ td.right {
 .monthCell.is-imported{ background: rgba(0, 200, 120, .12); border: 1px solid rgba(0, 200, 120, .25); }
 .monthCell.is-missing { background: rgba(220, 60, 60, .10); border: 1px solid rgba(220, 60, 60, .25); opacity: .85; }
 .monthCell.is-disabled{ cursor: not-allowed; opacity: .55; }
-.monthCell.is-selected{ outline: 2px solid rgba(255,255,255,.35); }
+.monthCell.is-selected{ outline: 2px solid rgba(205,127,50,.55); }
 
 .is-hidden { display: none !important; }
 .hidden { display: none; }
@@ -369,15 +414,15 @@ td.right {
 
 /* hover – jasno da se može kliknuti */
 .calYear:hover {
-  background: #f0f2f5;
-  border-color: #ccc;
+  background: rgba(255,255,255,.06);
+  border-color: var(--border);
 }
 
 /* aktivna godina (YEAR VIEW) */
 .calYear.is-active {
-  background: #2563eb;       /* plava */
-  color: #fff;
-  border-color: #2563eb;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
 }
 
 /* mali "button feel" */
@@ -424,7 +469,7 @@ td.right {
 .yearBreakdown th {
   font-weight: 600;
   font-size: 13px;
-  color: #cfe0ff;
+  color: var(--text);
 }
 
 .yearBreakdown td {
@@ -454,9 +499,10 @@ td.right {
   width:100%;
   text-align:left;
   padding:10px 12px;
-  border:1px solid rgba(0,0,0,.15);
-  border-radius:10px;
-  background:#fff;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  background:#0d172b;
+  color:var(--text);
   cursor:pointer;
 }
 
@@ -510,7 +556,7 @@ td.right {
 
 /* Disabled i selekcija i dalje rade */
 .calPop .monthCell.is-disabled{ opacity:.35; cursor:not-allowed; }
-.calPop .monthCell.is-selected{ outline: 2px solid rgba(255,255,255,.45); }
+.calPop .monthCell.is-selected{ outline: 2px solid rgba(205,127,50,.6); }
 
 /* Ove boje ostaju iste, samo ih “scope-amo” u popup (nije obavezno) */
 .calPop .monthCell.is-imported{ background: rgba(0,200,120,.12); border:1px solid rgba(0,200,120,.25); }
@@ -543,7 +589,7 @@ td.right {
   position: relative;
   width: min(520px, calc(100% - 24px));
   margin: 60px auto;
-  background: rgba(20,20,24,.98);
+  background: var(--panel);
   border: 1px solid rgba(255,255,255,.12);
   border-radius: 18px;
   box-shadow: 0 12px 40px rgba(0,0,0,.45);
@@ -627,8 +673,8 @@ td.right {
     right: 0;
     height: 100%;
     width: min(360px, 88vw);
-    background: #0f172a;            /* prilagodi tvojoj temi */
-    border-left: 1px solid rgba(255,255,255,.08);
+    background: var(--panel);
+    border-left: 1px solid var(--border);
     z-index: 1000;
     padding: 12px;
     transform: translateX(0);
@@ -690,25 +736,27 @@ td.right {
 }
 
 .btn-edit {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
 }
 
 .btn-edit:hover {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 
-.btn-delete {
-  background: #dc2626;
-  border-color: #dc2626;
+.btn-delete,
+.btn.danger {
+  background: var(--danger);
+  border-color: var(--danger);
   color: #fff;
 }
 
-.btn-delete:hover {
-  background: #b91c1c;
-  border-color: #b91c1c;
+.btn-delete:hover,
+.btn.danger:hover {
+  background: var(--danger-strong);
+  border-color: var(--danger-strong);
 }
 
 /* PWA controlled update banner */

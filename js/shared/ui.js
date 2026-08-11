@@ -31,6 +31,8 @@ export function renderKPIs({ income, expenses, net, nights, net_avg, expense_rat
    els.kpiExpenses.textContent = fmtEUR(expenses, { dashIfNull: true });
    els.kpiNet.textContent = fmtEUR(net, { dashIfNull: true });
    els.kpiNights.textContent = fmtNum(nights, { dashIfNull: true });
+
+   setSignClass(els.kpiNet, Number.isFinite(net) ? (net >= 0 ? "positive" : "negative") : null);
 // Novo KPI
 function fmtPct01(x) {
   if (!Number.isFinite(x)) return "—";
@@ -40,13 +42,21 @@ function fmtPct01(x) {
 if (els.kpiNetAvg) {
   els.kpiNetAvg.textContent =
     net_avg == null ? "—" : fmtEUR(net_avg, { dashIfNull: true });
+  setSignClass(els.kpiNetAvg, Number.isFinite(net_avg) ? (net_avg >= 0 ? "positive" : "negative") : null);
 }
 
 if (els.kpiExpenseRatio) {
   els.kpiExpenseRatio.textContent =
     expense_ratio == null ? "—" : fmtPct01(expense_ratio);
+  setSignClass(els.kpiExpenseRatio, Number.isFinite(expense_ratio) ? (expense_ratio > 0.6 ? "warning" : null) : null);
 }
 // kraj Novo KPI  
+}
+
+function setSignClass(el, kind) {
+  if (!el) return;
+  el.classList.remove("positive", "negative", "warning");
+  if (kind) el.classList.add(kind);
 }
 
 export function renderIncomeTable(root, perApt, aptFilter) {

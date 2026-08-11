@@ -78,7 +78,7 @@ export function renderApartmentsTable(tbody, rows, groupMap, handlers) {
             actions.appendChild(btnArchive);
 
             const btnDel = document.createElement("button");
-            btnDel.className = "btn";
+            btnDel.className = "btn danger";
             btnDel.type = "button";
             btnDel.textContent = "Delete";
             btnDel.addEventListener("click", () => handlers.onDelete(r.id));
