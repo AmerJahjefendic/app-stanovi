@@ -6,12 +6,52 @@ import {
   dbPutStoreMapAtomic,
 } from "../db/db.js";
 import "../shared/app-version.js";
+import { normalizeLegacyTimestamps } from "../shared/record-timestamps.js";
 
 export const BACKUP_FORMAT_VERSION = 2;
 export const DATA_SCHEMA_VERSION = 1;
 
 const APP_ID = "appstanovi";
 const LEGACY_APP_NAME = "AppStanovi";
+
+const TIMESTAMPED_RESTORE_STORES = new Set([
+  "income_items",
+  "income_monthly",
+  "expenses",
+  "shopping_items",
+  "category_aliases",
+  "n_commission",
+]);
+
+/**
+ * Normalize legacy timestamp shapes at the restore boundary. This is required
+ * because the v15 DB backfill is one-time; an older backup restored later must
+ * not reintroduce created_at/updated_at fields after the migration marker is set.
+ * `imports.imported_at` remains an intentional semantic exception.
+ */
+export function normalizeRestoredStoreRows(storeRows, fallbackIso = new Date().toISOString()) {
+  const normalized = {};
+
+  for (const [storeName, rows] of Object.entries(storeRows || {})) {
+    if (TIMESTAMPED_RESTORE_STORES.has(storeName)) {
+      normalized[storeName] = (rows || []).map((row) => normalizeLegacyTimestamps(row, fallbackIso));
+      continue;
+    }
+
+    if (storeName === "imports") {
+      normalized[storeName] = (rows || []).map((row) => {
+        if (row?.imported_at) return { ...row };
+        const { created_at, ...rest } = row || {};
+        return { ...rest, imported_at: created_at || fallbackIso };
+      });
+      continue;
+    }
+
+    normalized[storeName] = rows;
+  }
+
+  return normalized;
+}
 
 function appVersion() {
   return String(globalThis.APPSTANOVI_APP_VERSION || "unknown");
@@ -229,6 +269,7 @@ export async function restoreBackupFileAtomic(file) {
   const ok = confirm(`${label}\n\nRestore će DODATI/PREPISATI podatke iz backupa. Postojeći podaci se neće brisati. Nastaviti?`);
   if (!ok) return null;
 
-  await dbPutStoreMapAtomic(normalized.storeRows);
-  return normalized;
+  const restoreRows = normalizeRestoredStoreRows(normalized.storeRows);
+  await dbPutStoreMapAtomic(restoreRows);
+  return { ...normalized, storeRows: restoreRows };
 }

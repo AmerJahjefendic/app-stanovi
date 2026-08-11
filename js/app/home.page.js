@@ -15,6 +15,7 @@ import {
 
 import { keyFromPeriod, periodKeyToYM, getMonthLabel } from "../shared/utils.js";
 import { importTroskovnikXlsx } from "../shared/importXlsx.js";
+import { stampNewRecords, withCreateTimestamps } from "../shared/record-timestamps.js";
 import { periodLabel } from "../shared/parseFilename.js";
 import { computePeriodReport, computeYearReport, computeRangeReport, computeOwnerReport } from "../reports/metrics.service.js";
 import { LS_KEYS } from "../shared/constants.js";
@@ -351,10 +352,10 @@ async function handleImport(file) {
   }
 
   await dbPutOne("imports", parsed.importRecord);
-  await dbPutMany("income_monthly", parsed.incomeMonthly);
-  if (parsed.incomeItems?.length) await dbPutMany("income_items", parsed.incomeItems);
-  await dbPutMany("expenses", parsed.expenses);
-  await dbPutOne("n_commission", parsed.nCommission);
+  await dbPutMany("income_monthly", stampNewRecords(parsed.incomeMonthly));
+  if (parsed.incomeItems?.length) await dbPutMany("income_items", stampNewRecords(parsed.incomeItems));
+  await dbPutMany("expenses", stampNewRecords(parsed.expenses));
+  await dbPutOne("n_commission", { ...parsed.nCommission, ...withCreateTimestamps(null) });
 
   state.isRangeView = false;
   state.isYearView = false;

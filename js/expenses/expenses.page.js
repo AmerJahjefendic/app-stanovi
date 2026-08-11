@@ -10,6 +10,7 @@ import {
     makeId,
 } from "../db/db.js";
 import { periodLabel } from "../shared/parseFilename.js";
+import { withCreateTimestamps, nowIso } from "../shared/record-timestamps.js";
 import { loadCategoryAliases, mapExpenseCategory } from "../shared/mappingConfig.js";
 import { renderYearBreakdownTable } from "./expenses.ui.js";
 import {
@@ -569,7 +570,7 @@ async function updateExpensesCategory(fromCategory, toCategory) {
     const fromNormalized = normalizeCategoryName(fromCategory);
     const expenses = await dbGetAll("expenses");
     let updatedCount = 0;
-    const now = new Date().toISOString();
+    const updatedAt = nowIso();
 
     for (const expense of expenses) {
         const categoryNormalized =
@@ -586,7 +587,7 @@ async function updateExpensesCategory(fromCategory, toCategory) {
             ...expense,
             // raw_category ostaje izvorna vrijednost iz importa.
             category: toCategory,
-            updated_at: now,
+            updatedAt,
         });
         updatedCount += 1;
     }
@@ -875,7 +876,6 @@ async function handleSaveExpense() {
 
     const fx = getFxRate();
     const amountEur = round2(amountBam / fx);
-    const now = new Date().toISOString();
 
     const item = {
         ...(existingExpense || {}),
@@ -895,9 +895,7 @@ async function handleSaveExpense() {
             els.expAddNote?.value || ""
         ).trim(),
         source: existingExpense?.source || "Manual",
-        created_at:
-            existingExpense?.created_at || now,
-        updated_at: now,
+        ...withCreateTimestamps(existingExpense),
     };
 
     try {

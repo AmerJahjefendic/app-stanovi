@@ -57,7 +57,9 @@ function applyFilters(items) {
   return items
     .filter((it) => state.filter === "ALL" || it.status === state.filter)
     .filter((it) => !q || normalize(it.name).includes(q) || normalize(it.note).includes(q))
-    .sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
+    .sort((a, b) =>
+      (b.updatedAt || b.updated_at || "").localeCompare(a.updatedAt || a.updated_at || "")
+    );
 }
 
 function setFormEnabled(enabled) {

@@ -1,6 +1,8 @@
 // js/db.js
+import { normalizeLegacyTimestamps, withCreateTimestamps } from "../shared/record-timestamps.js";
+
 const DB_NAME = "appstanovi_db";
-export const DB_VER = 14;
+export const DB_VER = 15;
 
 export const BACKUP_STORE_NAMES = Object.freeze([
   "apartments",
@@ -102,7 +104,19 @@ function openDB() {
         s.createIndex("by_group_status", ["group", "status"], { unique: false });
 
         // Opcionalno za sortiranje po zadnjoj izmjeni
-        s.createIndex("by_updated_at", "updated_at", { unique: false });
+        s.createIndex("by_updated_at", "updatedAt", { unique: false });
+      }
+
+      // v15: shopping_items switched updated_at -> updatedAt (camelCase).
+      // Recreate the index on existing databases so it points at the field
+      // that's actually populated going forward. The index itself is
+      // currently unused by any query, so this is just keeping it honest.
+      if (db.objectStoreNames.contains("shopping_items")) {
+        const shop = req.transaction.objectStore("shopping_items");
+        if (shop.indexNames.contains("by_updated_at")) {
+          shop.deleteIndex("by_updated_at");
+        }
+        shop.createIndex("by_updated_at", "updatedAt", { unique: false });
       }
 
       // ===== NEW STORES (multi-apartment support) =====
@@ -363,19 +377,32 @@ function openDB() {
         console.warn("[db] versionchange -> connection closed. Reload page / close other tabs.");
       };
 
-      // Run post-upgrade migrations asynchronously
-      runPostUpgradeMigrations(db).catch(err => {
-        console.error("[db] Post-upgrade migration failed:", err);
-      });
+      // v15 timestamp normalization is a one-time data migration. It must
+      // finish before callers receive the DB connection so UI reads cannot
+      // race partially-migrated records. A marker in meta prevents full-store
+      // scans on every subsequent app start.
+      (async () => {
+        try {
+          await runV15TimestampMigration(db);
+          resolve(db);
 
-      resolve(db);
+          // Older compatibility patches remain best-effort post-open work.
+          runPostUpgradeMigrations(db).catch(err => {
+            console.error("[db] Post-upgrade migration failed:", err);
+          });
+        } catch (err) {
+          try { db.close(); } catch { }
+          reject(err);
+        }
+      })();
     };
     req.onerror = () => reject(req.error);
   });
 }
 
 // ===== POST-UPGRADE MIGRATIONS =====
-// Migrations that run after DB is opened (not in onupgradeneeded transaction)
+// Older compatibility patches that are cheap/idempotent and intentionally
+// remain best-effort after the DB connection is available.
 async function runPostUpgradeMigrations(db) {
   try { 
     await patchShareSetsTimestamps(db); 
@@ -388,6 +415,115 @@ async function runPostUpgradeMigrations(db) {
   } catch (e) { 
     console.error("[migration] patchSystemGroupNames failed", e); 
   }
+}
+
+const V15_TIMESTAMP_MIGRATION_KEY = "migration:v15:timestamps";
+
+async function getMetaRecord(db, key) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("meta", "readonly");
+    const req = tx.objectStore("meta").get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function putMetaRecord(db, record) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("meta", "readwrite");
+    tx.objectStore("meta").put(record);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// v15 timestamp migration is intentionally one-time. Restoring an older JSON
+// backup is normalized at the restore boundary, so legacy timestamp fields do
+// not require re-scanning the whole database on every application start.
+async function runV15TimestampMigration(db) {
+  const marker = await getMetaRecord(db, V15_TIMESTAMP_MIGRATION_KEY);
+  if (marker?.value === true) return;
+
+  for (const store of ["income_items", "income_monthly", "expenses", "shopping_items", "category_aliases"]) {
+    await patchStoreTimestamps(db, store);
+  }
+
+  await patchImportsMissingImportedAt(db);
+  await patchNCommissionTimestamps(db);
+
+  await putMetaRecord(db, {
+    key: V15_TIMESTAMP_MIGRATION_KEY,
+    value: true,
+    completedAt: new Date().toISOString(),
+  });
+}
+
+// v15: a handful of manually-created "imports" period markers (from the old
+// income.page.js path) used created_at instead of imported_at, which is the
+// field the imports list UI actually reads (js/shared/ui.js) -> "Invalid Date".
+async function patchImportsMissingImportedAt(db) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("imports", "readwrite");
+    const store = tx.objectStore("imports");
+    const getAllReq = store.getAll();
+
+    getAllReq.onsuccess = () => {
+      const all = getAllReq.result || [];
+      for (const rec of all) {
+        if (rec.imported_at) continue;
+        const { created_at, ...rest } = rec;
+        store.put({ ...rest, imported_at: created_at || new Date().toISOString() });
+      }
+    };
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function patchNCommissionTimestamps(db) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("n_commission", "readwrite");
+    const store = tx.objectStore("n_commission");
+    const getAllReq = store.getAll();
+
+    getAllReq.onsuccess = () => {
+      const all = getAllReq.result || [];
+      const fallback = new Date().toISOString();
+      for (const rec of all) {
+        if (rec.createdAt && rec.updatedAt) continue;
+        store.put(normalizeLegacyTimestamps(rec, fallback));
+      }
+    };
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function patchStoreTimestamps(db, storeName) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, "readwrite");
+    const store = tx.objectStore(storeName);
+    const getAllReq = store.getAll();
+
+    getAllReq.onsuccess = () => {
+      const all = getAllReq.result || [];
+      const fallback = new Date().toISOString();
+
+      for (const rec of all) {
+        const hadLegacyFields = "created_at" in rec || "updated_at" in rec;
+        const hadBoth = !!(rec.createdAt && rec.updatedAt);
+        if (hadBoth && !hadLegacyFields) continue; // already clean, skip write
+
+        const next = normalizeLegacyTimestamps(rec, fallback);
+        store.put(next);
+      }
+    };
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }
 
 async function patchSystemGroupNames() {
@@ -704,13 +840,17 @@ export async function dbGetAllCategoryAliases() {
 }
 
 export async function dbPutCategoryAlias(from, to) {
+  const normalizedFrom = String(from || "").trim();
+  const normalizedTo = String(to || "").trim();
+  if (!normalizedFrom) throw new Error("Alias 'from' je prazan.");
+  if (!normalizedTo) throw new Error("Alias 'to' je prazan.");
+
+  const existing = await dbGetOne("category_aliases", normalizedFrom);
   const rec = {
-    from: String(from || "").trim(),
-    to: String(to || "").trim(),
-    updated_at: new Date().toISOString(),
+    from: normalizedFrom,
+    to: normalizedTo,
+    ...withCreateTimestamps(existing),
   };
-  if (!rec.from) throw new Error("Alias 'from' je prazan.");
-  if (!rec.to) throw new Error("Alias 'to' je prazan.");
   return dbPutOne("category_aliases", rec); // keyPath = from => upsert radi
 }
 
@@ -763,7 +903,8 @@ export async function shoppingAddItem({ group, name, note = "", unit = "pcs", qt
     unit: String(unit || "pcs").trim(),
     qty: Number.isFinite(q) && q > 0 ? q : null, // opcionalno, samo >0
     status,
-    updated_at: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   };
 
   return dbPutOne(SHOP_STORE, rec);
@@ -775,7 +916,7 @@ export async function shoppingToggleStatus(id) {
   if (!row) return false;
   const next = (row.status === "TO_BUY") ? "IN_STOCK" : "TO_BUY";
   row.status = next;
-  row.updated_at = new Date().toISOString();
+  row.updatedAt = new Date().toISOString();
   return dbPutOne(SHOP_STORE, row);
 }
 
@@ -807,7 +948,7 @@ export async function shoppingBumpQty(id, delta) {
 
   // Pravilo: ako padne na 0 ili manje -> qty = null (nije obavezno polje)
   row.qty = next > 0 ? next : null;
-  row.updated_at = new Date().toISOString();
+  row.updatedAt = new Date().toISOString();
 
   return dbPutOne(SHOP_STORE, row);
 }

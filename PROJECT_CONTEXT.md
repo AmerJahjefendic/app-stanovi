@@ -54,6 +54,7 @@ Prije razvoja Booking Calendara ne širiti scope. Fokus v1.5.1 je:
 - **Final Fresh-State UI Hotfix:** legacy blok “Napomena za N” je inicijalno skriven u HTML-u i prikazuje se samo kada stvarni legacy `n_commission` podatak zahtijeva njegov prikaz. Fresh instalacija više ne prikazuje prazan N legacy panel.
 - Ukupno nakon finalnih release hotfixeva: **56 regression testova**.
 - v1.5.1 stabilization je završen; release gate je potvrđen sa 56/56 regression testova i završnim ručnim smoke testovima.
+- **DB15 Timestamp Hardening:** timestamp polja su normalizovana, v15 backfill je jednokratan/awaited, legacy backup restore normalizuje timestamp shape, a test suite je proširen na 71/71.
 
 ---
 
@@ -281,6 +282,7 @@ To je glavni runtime izvor konfiguracije apartmana.
 │       ├── income-period-view.service.js
 │       ├── managed-income-calculator.js
 │       ├── pdf.js
+│       ├── record-timestamps.js
 │       ├── reservation-financial.service.js
 │       ├── shared-expense-allocation.service.js
 │       ├── shopping-scopes.service.js
@@ -893,7 +895,7 @@ Ovo ponašanje ne mijenjati bez eksplicitne odluke.
 
 ```text
 DB_NAME = appstanovi_db
-DB_VER  = 14
+DB_VER  = 15
 ```
 
 ### Current stores
@@ -933,6 +935,31 @@ Migracije moraju biti:
 
 DB14 uključuje legacy Airbnb `feeModel` compatibility migraciju: zapisi bez `feeModel` tretiraju se kao `SPLIT_FEE`.
 
+DB15 uvodi normalizaciju timestamp polja za istorijske zapise. `income_items`, `income_monthly`, `expenses`, `shopping_items`, `category_aliases` i `n_commission` koriste camelCase `createdAt` / `updatedAt`. Novi `category_aliases` write path također čuva originalni `createdAt` pri upsertu i osvježava samo `updatedAt`, tako da novi aliasi ne vraćaju timestamp nekonzistentnost nakon završene migracije. Migracija je jednokratna, završava se prije nego `getDB()` učini konekciju dostupnom aplikaciji i zapisuje `meta` marker `migration:v15:timestamps`, tako da se storeovi ne skeniraju pri svakom startu. Ako legacy zapis ima creation timestamp ali nema update timestamp, `updatedAt` nasljeđuje creation timestamp umjesto datuma migracije.
+
+Restore starog JSON backupa normalizuje timestamp polja na restore granici, tako da jednokratna DB15 migracija ne mora ponovo skenirati bazu nakon restore-a. `imports.imported_at` ostaje namjerni semantički izuzetak jer predstavlja vrijeme importa, a ne generički record `createdAt`.
+
+---
+
+### 16.1 Record timestamps – DB15 hardening
+
+Shared helper:
+
+```text
+js/shared/record-timestamps.js
+```
+
+Koristi se za nove/izmijenjene Income i Expense zapise, bulk XLSX write tokove, restore normalizaciju i DB15 legacy backfill. Established registry/configuration servisi mogu i dalje direktno održavati vlastite camelCase timestampove; helper nije jedino mjesto u cijelom projektu koje smije postaviti `createdAt` / `updatedAt`.
+
+Pravila:
+
+- novi generički record timestampovi koriste camelCase `createdAt` / `updatedAt`,
+- legacy `created_at` / `updated_at` se normalizuju na migration/restore granici,
+- partial legacy zapis sa poznatim creation timestampom ne dobija lažni `updatedAt` jednak datumu migracije,
+- DB15 backfill se izvršava jednom i označava `meta` markerom,
+- restore starog backupa ponovo normalizuje legacy timestamp shape bez potrebe za ponovnim full-store scanom,
+- `imports.imported_at` je namjerni semantički izuzetak.
+
 ---
 
 ## 17. PWA
@@ -941,7 +968,7 @@ DB14 uključuje legacy Airbnb `feeModel` compatibility migraciju: zapisi bez `fe
 
 ```text
 APP_VERSION        = 1.5.1
-APP_SHELL_REVISION = 1
+APP_SHELL_REVISION = 2
 ```
 
 Source:
@@ -1051,7 +1078,7 @@ npm test
 
 ### Trenutni test coverage
 
-Uveden je regression safety net koji nakon finalnih release hotfixeva sadrži **56 testova** i pokriva:
+Uveden je regression safety net koji nakon finalnih release hotfixeva sadrži **71 test** i pokriva:
 
 - Airbnb `SPLIT_FEE` payout legacy tok,
 - Airbnb `SPLIT_FEE` gross/3% legacy calculator,
@@ -1109,7 +1136,7 @@ Ovo nisu zahtjevi za novi feature; ovo su nalazi koje treba uzeti u obzir prije/
 
 Prije v1.5.1 nije postojao automatizovani test suite za finansijski core.
 
-v1.5.1 stabilization sada ima 56 regression testova. Ovo značajno smanjuje rizik budućih finansijskih, registry i legacy-boundary regresija, ali ne zamjenjuje kompletne UI/IndexedDB/PWA end-to-end testove.
+v1.5.1 stabilization + timestamp hardening sada ima 71 regression test. Ovo značajno smanjuje rizik budućih finansijskih, registry i legacy-boundary regresija, ali ne zamjenjuje kompletne UI/IndexedDB/PWA end-to-end testove.
 
 ### High/Medium – privacy u legacy `APARTMENT_DEFS` [PHASE 4B ADDRESSED]
 
@@ -1299,9 +1326,9 @@ Ovaj `PROJECT_CONTEXT.md` odgovara stanju nakon:
 - Phase 1 automated regression test safety net-a,
 - Phase 2 Cleaning Fee modela: default + platform override, uz korigovanu SINGLE_FEE input semantiku,
 - Phase 3 Apartment Lifecycle modela: ACTIVE / INACTIVE / ARCHIVED + delete protection,
-- ukupno 56 regression testova,
+- ukupno 71 regression test,
 - planirane deprecacije SPLIT_FEE opcije za nove rezervacije uz očuvanje historical compatibility-ja.
 
-v1.5.1 Stabilization & Audit je završen; release je potvrđen sa 56/56 regression testova i završnim ručnim smoke testovima.
+v1.5.1 Stabilization & Audit release gate je potvrđen sa 56/56 regression testova i završnim ručnim smoke testovima. Naknadni DB15 timestamp hardening proširuje safety net na 71/71 testova.
 
 **Current release: `v1.5.1`.**

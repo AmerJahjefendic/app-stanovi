@@ -8,6 +8,7 @@ import {
     calculateManagedReservation,
 } from "../shared/managed-income-calculator.js";
 import { buildReservationFinancial } from "../shared/reservation-financial.service.js";
+import { withCreateTimestamps } from "../shared/record-timestamps.js";
 import {
     buildIncomePeriodView,
     computeIncomePeriodTotals,
@@ -343,7 +344,7 @@ async function ensureImportPeriod(year, month) {
         year,
         month,
         source: "MANUAL",
-        created_at: new Date().toISOString(),
+        imported_at: new Date().toISOString(),
     });
 }
 
@@ -757,8 +758,7 @@ async function handleAddIncomeItem() {
         checkout: checkout || null,
         note,
         source: "Manual",
-        created_at: existingItem?.created_at || new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        ...withCreateTimestamps(existingItem),
     };
 
     try {
@@ -1031,7 +1031,7 @@ function attach() {
             if (!item) return;
 
             item.paid = paid;
-            item.updated_at = new Date().toISOString();
+            item.updatedAt = withCreateTimestamps(item).updatedAt;
 
             await dbPutOne("income_items", item);
             await render();
