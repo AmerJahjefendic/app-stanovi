@@ -625,6 +625,10 @@ export async function dbPutStoreMapAtomic(storeRows) {
         for (const row of rows) store.put(row);
       }
     } catch (err) {
+      // A synchronous put() error does not automatically abort IndexedDB.
+      // Roll back any earlier queued writes before reporting restore failure.
+      settled = true;
+      try { t?.abort(); } catch { /* Preserve the original write/setup error. */ }
       reject(err);
       return;
     }

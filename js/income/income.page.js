@@ -7,7 +7,12 @@ import {
     calculateAirbnbSplitFeeFromPayout,
     calculateManagedReservation,
 } from "../shared/managed-income-calculator.js";
-import { buildReservationFinancial } from "../shared/reservation-financial.service.js";
+import {
+    buildReservationFinancial,
+    isManagedReservation,
+    resolveReservationAgencyShare,
+    resolveReservationOwnerShare,
+} from "../shared/reservation-financial.service.js";
 import { withCreateTimestamps } from "../shared/record-timestamps.js";
 import {
     buildIncomePeriodView,
@@ -89,7 +94,24 @@ function isManagedApartmentId(id) {
     return String(id || "").trim() === "N";
 }
 
-function managedSharesForApartment(id) {
+function managedSharesForApartment(id, existingItem = null) {
+    // An edit of the same managed reservation keeps the historical shares
+    // used by reporting, even when today's apartment settings have changed.
+    if (
+        existingItem &&
+        String(existingItem.apartment || "").trim() === String(id || "").trim() &&
+        isManagedReservation(existingItem)
+    ) {
+        const agencyShare = resolveReservationAgencyShare(existingItem);
+        const ownerShare = resolveReservationOwnerShare(existingItem);
+        return {
+            agencyPct: agencyShare * 100,
+            ownerPct: ownerShare * 100,
+            agencyShare,
+            ownerShare,
+        };
+    }
+
     const apt = apartmentConfig(id);
     const pct = Number(apt?.agencyPct);
     const agencyPct = Number.isFinite(pct) && pct >= 0 && pct <= 100 ? pct : 25;
@@ -472,7 +494,7 @@ async function handleAddIncomeItem() {
     if (!apartment) return alert("Prvo dodaj apartman u Settings i zatim ga izaberi.");
     const platform = (els.incAddPlatform?.value || "").toLowerCase();
     const isManaged = isManagedApartmentId(apartment);
-    const managedShares = managedSharesForApartment(apartment);
+    const managedShares = managedSharesForApartment(apartment, existingItem);
 
     let amountToStore = 0;         // income_items.amount_eur (A/Z prihod; za N čuvamo splitBase)
     let grossAmount = 0;          // relevantno: Booking (gross) i N+Airbnb (gross reservation)

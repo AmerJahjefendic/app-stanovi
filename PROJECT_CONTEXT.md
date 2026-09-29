@@ -968,7 +968,7 @@ Pravila:
 
 ```text
 APP_VERSION        = 1.5.1
-APP_SHELL_REVISION = 2
+APP_SHELL_REVISION = 18
 ```
 
 Source:
@@ -1197,6 +1197,8 @@ Optimizovati tek kada postoji mjerljiv problem, npr.:
 
 ### v1.6.0 – Booking Calendar
 
+**Status:** planirano, nije implementirano u ovom repozitoriju. Calendar rezervacija može postojati odmah, ali Reservation → Income automatizacija smije napraviti Income tek od **check-in + 1 dan**, zbog Booking.com no-show rizika. Kreiranje mora biti idempotentno: ponovno učitavanje ili ponovni import ne smije proizvesti dupli prihod. iCal import, boje platformi i opcionalan broj gostiju su planirane mogućnosti; konkretan dizajn, identitet rezervacije i ponašanje kod izmjena/otkazivanja treba definisati prije implementacije.
+
 Arhitektonski spremno uz poštivanje pravila:
 
 - koristi Apartment Registry,
@@ -1332,3 +1334,13 @@ Ovaj `PROJECT_CONTEXT.md` odgovara stanju nakon:
 v1.5.1 Stabilization & Audit release gate je potvrđen sa 56/56 regression testova i završnim ručnim smoke testovima. Naknadni DB15 timestamp hardening proširuje safety net na 71/71 testova.
 
 **Current release: `v1.5.1`.**
+
+---
+
+## 28. Codex handoff — 2026-09-29
+
+- Ovo je **privatna** AppStanovi aplikacija; zasebni sellable `PropertyManagement` ne smije naslijediti privatni legacy model kao obavezni proizvodni model.
+- Prije razvoja provjeriti `AGENTS.md`, stvarni kod, testove i `git status`. ZIP predat za handoff već sadrži lokalne izmjene u `index.html` i `settings.html`; nisu dio ovog dokumentacijskog paketa i ne treba ih prepisivati.
+- U pregledanom ZIP-u `main` i `origin/main` upućuju na `9bae2f2`; dokumentacijski paket nije automatski commitovan ni pushan. Provjeri stanje svoga lokalnog repozitorija prije kopiranja.
+- Na dan pregleda `DB_VER = 15`, `APP_VERSION = 1.5.1`, `APP_SHELL_REVISION = 18`; `npm test` prolazi 71/71. Ove vrijednosti su zabilježeno stanje ZIP-a, ne trajna garancija nakon novih izmjena.
+- Trenutni operativni fokus je stabilna privatna aplikacija; Booking Calendar je naredna planirana faza. Ne širiti ga bez konkretnog zadatka.
